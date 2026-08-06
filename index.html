@@ -15,7 +15,7 @@
   <div class="auth-page" id="auth-page">
     <div class="auth-box">
 
-      <div class="auth-logo">TQ Statistics</div>
+      <div class="auth-logo">Welcome to TQ</div>
 
       <div class="auth-tabs">
         <button class="auth-tab active" id="tab-login"    onclick="switchTab('login')">Sign In</button>
@@ -61,7 +61,7 @@
 
       <p class="auth-hint">
         New users can register themselves — no admin required.<br/>
-        Your data is stored in Google Sheets, separate from other users.
+        Your data is stored in Google Sheets, <br> separate from other users.
       </p>
 
     </div>
@@ -76,25 +76,12 @@
       <!-- Header -->
       <header class="header">
         <div class="header-left">
-          <h1 class="app-title">TQ Statistics</h1>
+          <h1 class="app-title">TQ Statistics |</h1>
           <span class="user-greeting" id="user-greeting">Welcome back!</span>
         </div>
         <div class="header-right">
           <button class="icon-btn" id="btn-theme" title="Toggle theme">☀️</button>
-          <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
-            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2
-                0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1
-                1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0
-                2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2
-                2 0 0 0 2-2v-.18a2 2 0 0 0 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0
-                2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1
-                1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0
-                0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-          </button>
+          
           <button class="btn-logout" id="btn-logout">Sign Out</button>
         </div>
       </header>
@@ -187,7 +174,7 @@
           <canvas id="daily-trend-chart"></canvas>
         </div>
 
-        <div class="daily-hover-hint">Hover to see monthly trend ↑</div>
+        <div class="daily-hover-hint">Hover to see monthly leads ↑</div>
 
         <!-- QL Notes for the selected day — always visible -->
         <div class="daily-ql-notes">
@@ -206,33 +193,6 @@
 
     </div><!-- /.app -->
   </div><!-- /#app-page -->
-
-  <!-- Settings Modal -->
-  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true"
-    aria-labelledby="modal-title" style="display:none;">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">Settings</h2>
-        <p class="modal-desc">
-          The Apps Script URL is hardcoded in <strong>script.js</strong> at the top (API_URL).
-          Edit that file to change it.
-        </p>
-      </div>
-      <div class="modal-body">
-        <label class="field-label" for="script-url-input">Current Apps Script URL</label>
-        <input type="url" id="script-url-input" class="text-input" readonly
-          placeholder="Paste your URL in script.js → API_URL" autocomplete="off" />
-        <p class="field-hint">
-          To update: open <strong>script.js</strong>, find the line that says
-          <code>const API_URL = '…'</code> at the very top, and replace the URL.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" id="btn-cancel">Close</button>
-        <button class="btn btn-primary" id="btn-save">OK</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Toast -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

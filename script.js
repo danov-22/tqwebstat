@@ -89,7 +89,10 @@ function clearAuthError()   { authError.textContent = ''; authError.classList.re
 
 async function handleLogin(e) {
   e.preventDefault(); clearAuthError();
-  const username = document.getElementById('login-user').value.trim();
+  const username = document.getElementById('login-user')
+    .value
+    .trim()
+    .replace(/\s+/g, ' ');
   const password = document.getElementById('login-pass').value;
   const btn      = document.getElementById('login-btn');
   btn.disabled = true; btn.textContent = 'Signing in…';
@@ -103,7 +106,10 @@ async function handleLogin(e) {
 
 async function handleRegister(e) {
   e.preventDefault(); clearAuthError();
-  const username = document.getElementById('reg-user').value.trim();
+  const username = document.getElementById('reg-user')
+    .value
+    .trim()
+    .replace(/\s+/g, ' ');
   const password = document.getElementById('reg-pass').value;
   const confirm  = document.getElementById('reg-pass2').value;
   const btn      = document.getElementById('reg-btn');
@@ -117,12 +123,25 @@ async function handleRegister(e) {
   finally { btn.disabled = false; btn.textContent = 'Create Account'; }
 }
 
+function formatUsername(username) {
+  return username
+    .trim()
+    .split(/\s+/)
+    .map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    )
+    .join(' ');
+}
+
 function onLoginSuccess(username) {
   currentUser = username;
   localStorage.setItem('tq_user', username);
+
   authPage.style.display = 'none';
   appPage.classList.add('visible');
-  document.getElementById('user-greeting').textContent = 'Welcome, ' + username + '!';
+
+  document.getElementById('user-greeting').textContent = formatUsername(username);
+
   initApp();
 }
 
@@ -794,7 +813,7 @@ function escapeHtml(str) {
     currentUser = savedUser;
     authPage.style.display = 'none';
     appPage.classList.add('visible');
-    document.getElementById('user-greeting').textContent = 'Welcome, ' + savedUser + '!';
+    document.getElementById('user-greeting').textContent = savedUser;
     initApp();
   }
 })();

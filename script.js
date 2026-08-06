@@ -295,7 +295,7 @@ async function recordStat(category, delta, button = null) {
   todayCounts[category] = Math.max(0, (todayCounts[category] || 0) + delta);
 
   const payload = {
-  username: "admin",
+  username: localStorage.getItem("username"),
   date: todayISO(),
   category,
   delta

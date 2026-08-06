@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TQ Web Statistics</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Auth guard: runs before anything else ── -->
+  <script>
+    (function authGuard() {
+      var token  = localStorage.getItem('tq_token');
+      var expiry = Number(localStorage.getItem('tq_token_expiry') || 0);
+      if (!token || Date.now() >= expiry) {
+        // Not logged in (or session expired) → back to login
+        localStorage.removeItem('tq_token');
+        localStorage.removeItem('tq_token_expiry');
+        window.location.href = 'login.html';
+      }
+    })();
+  </script>
+
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <h1 class="app-title">TQ Web Statistics | <span id="header-username"></span></h1>
+
+      <div style="display:flex;gap:8px;align-items:center;">
+
+        <button class="icon-btn" id="btn-theme" title="Toggle theme">☀</button>
+
+        <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
+          <!-- gear SVG -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0
+              1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1
+              1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2
+              2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 0
+              1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2
+              2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0
+              0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+
+        <!-- Logout button -->
+        <button class="icon-btn" id="btn-logout" title="Log out" aria-label="Log out">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+
+      </div>
+    </header>
+
+    <!-- Config banner (shown when no script URL) -->
+    <div class="config-banner" id="config-banner" role="button" tabindex="0"
+      aria-label="Configure Google Apps Script URL">
+      <strong>Connect Your Statistics Sheet</strong>
+      <br>
+      Paste your Google Apps Script Web App URL to connect your own Google Sheet.
+    </div>
+
+    <!-- Today's Total -->
+    <section class="card total-card">
+      <div class="card totals-card">
+
+        <div class="totals-main">
+          <div class="total-item">
+            <div class="total-label">Yesterday</div>
+            <div id="yesterday-calls" class="total-number">0</div>
+          </div>
+          <div class="total-item">
+            <div class="total-label">Today</div>
+            <div id="total-calls" class="total-number">0</div>
+          </div>
+        </div>
+
+        <div class="totals-extra">
+          <div class="total-item">
+            <div class="total-label">This Week</div>
+            <div id="week-calls" class="total-number">0</div>
+          </div>
+          <div class="total-item">
+            <div class="total-label">This Month</div>
+            <div id="month-calls" class="total-number">0</div>
+          </div>
+        </div>
+
+        <div class="totals-extra">
+          <div class="total-item">
+            <div class="total-label">QL This Week</div>
+            <div id="week-ql" class="total-number">0</div>
+          </div>
+          <div class="total-item">
+            <div class="total-label">QL This Month</div>
+            <div id="month-ql" class="total-number">0</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Chart card -->
+    <section class="card" id="chart-card">
+      <div class="chart-header">
+        <h2 class="section-title">Monthly Overview</h2>
+        <div class="chart-actions">
+          <button class="sync-btn" id="syncButton">↻ Sync</button>
+          <select class="month-select" id="month-select" aria-label="Select month"></select>
+        </div>
+      </div>
+
+      <div id="chart-loading" class="chart-placeholder" style="display:none;">Loading…</div>
+      <div id="chart-empty"   class="chart-placeholder" style="display:none;">No data for this month yet.</div>
+      <div id="chart-wrap"    style="display:none;">
+        <canvas id="monthly-chart" height="300"></canvas>
+      </div>
+    </section>
+
+    <!-- Daily Performance -->
+    <section class="card">
+      <h2 class="section-title">Daily Performance</h2>
+      <div class="daily-nav">
+        <button id="day-prev">◀</button>
+        <span id="daily-date"></span>
+        <button id="day-next">▶</button>
+      </div>
+      <div class="daily-summary">
+        <div>
+          <div class="daily-label">Full Pitch</div>
+          <div id="daily-fp" class="daily-number">0</div>
+        </div>
+        <div>
+          <div class="daily-label">Money Part</div>
+          <div id="daily-mp" class="daily-number">0</div>
+        </div>
+        <div>
+          <div class="daily-label">Qualified Leads</div>
+          <div id="daily-ql" class="daily-number">0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stat buttons grid -->
+    <section class="stats-grid" id="stats-grid"></section>
+
+  </div><!-- /.app -->
+
+  <!-- Settings modal -->
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true"
+    aria-labelledby="modal-title" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Settings</h2>
+        <p class="modal-desc">Connect your Google Sheet to start tracking statistics.</p>
+      </div>
+      <div class="modal-body">
+        <label class="field-label" for="script-url-input">Your Statistics Sheet Connection URL</label>
+        <input
+          type="url"
+          id="script-url-input"
+          class="text-input"
+          placeholder="https://script.google.com/macros/s/…"
+          autocomplete="off"
+        />
+        <p class="field-hint">
+          Paste your Apps Script Web App URL here. Get it from
+          <strong>Extensions → Apps Script → Deploy</strong> in your Google Sheet.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>

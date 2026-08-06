@@ -294,7 +294,13 @@ async function recordStat(category, delta, button = null) {
 
   todayCounts[category] = Math.max(0, (todayCounts[category] || 0) + delta);
 
-  const payload = { date: todayISO(), category, delta };
+  const payload = {
+  username: "admin",
+  date: todayISO(),
+  category,
+  delta
+  };
+  console.log(payload);
   let fpDelta = 0;
   let mpDelta = 0;
 

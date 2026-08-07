@@ -76,6 +76,13 @@ body {
   letter-spacing: -.03em;
 }
 
+.auth-title {
+  text-align: center;
+  font-size: .9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .auth-tabs {
   display: flex;
   border: 1px solid var(--border);

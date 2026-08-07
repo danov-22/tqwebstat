@@ -580,7 +580,7 @@ function renderChart(data) {
       borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.2
     })),
     {
-      label:           'Total',
+      label:           'Calls',
       data:            data.map(d => getDailyDials(d)),
       borderColor:     textColor,
       backgroundColor: textColor,

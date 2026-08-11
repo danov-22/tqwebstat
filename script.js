@@ -21,7 +21,7 @@ const CATEGORIES = [
   { key: 'hu',  label: 'Hung Up',               abbr: 'HU',  color: '#ef4444', quality: true },
   { key: 'dnc', label: 'Do Not Call',           abbr: 'DNC', color: '#dc2626', quality: true },
   { key: 'lb',  label: 'Language Barrier',      abbr: 'LB',  color: '#06b6d4' },
-  { key: 'wn',  label: 'Wrong Number',          abbr: 'WN',  color: '#94a3b8' }
+  { key: 'wn',  label: 'Wrong Number',          abbr: 'WN',  color: '#94a3b8' },
 ];
 
 /* ── App state ───────────────────────────────────────────────────── */
@@ -37,6 +37,7 @@ let dailyChartInstance = null;
 let todayCounts = Object.fromEntries(CATEGORIES.map(c => [c.key, 0]));
 todayCounts.fp  = 0;
 todayCounts.mp  = 0;
+todayCounts.rejected = 0;
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const authPage     = document.getElementById('auth-page');
@@ -175,12 +176,42 @@ async function postToScript(payload) {
 /* ════════════════════════════════════════════════════════════════════
    INIT
    ════════════════════════════════════════════════════════════════════ */
+async function fetchNotifications() {
+  try {
+    const res = await fetch(`${API_URL}?action=notifications`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (typeof renderNotifications === 'function') {
+      renderNotifications(data.notifications || []);
+    }
+  } catch (err) {
+    console.warn('Notifications failed:', err);
+  }
+}
+
 function initApp() {
   banner.classList.remove('visible'); // URL is hardcoded, no banner needed
 
   renderStatButtons();
   buildMonthPicker();
   fetchMonthlyData();
+  fetchNotifications();
+
+  const notificationBtn =
+document.getElementById('notification-btn');
+
+const notificationPanel =
+document.getElementById('notification-panel');
+
+
+if(notificationBtn && notificationPanel){
+
+  notificationBtn.addEventListener('click', () => {
+
+    notificationPanel.classList.toggle('open');
+
+  });
+}
 
   // Month picker
   monthSelect.addEventListener('change', () => {
@@ -197,11 +228,19 @@ function initApp() {
     finally { btn.disabled = false; btn.textContent = '↻ Sync'; }
   });
 
-  // Settings modal (kept so user can still see the URL)
-  document.getElementById('btn-settings').addEventListener('click', openModal);
-  document.getElementById('btn-save').addEventListener('click', saveSettings);
-  document.getElementById('btn-cancel').addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
+  // Settings modal
+  document.getElementById('btn-settings')
+  ?.addEventListener('click', openModal);
+
+  document.getElementById('btn-save')
+  ?.addEventListener('click', saveSettings);
+
+  document.getElementById('btn-cancel')
+  ?.addEventListener('click', closeModal);
+
+  modalOverlay?.addEventListener('click', e => {
+    if (e.target === modalOverlay) closeModal();
+  });
 
   // Daily nav
   document.getElementById('day-prev').addEventListener('click', () => {
@@ -226,6 +265,46 @@ function initApp() {
     dailySummary.style.opacity = '';
     dailyChartWrap.style.display = 'none';
   });
+
+  async function rejectQualifiedLead() {
+
+    const today = todayISO();
+
+    if ((todayCounts.ql || 0) <= 0) {
+      showToast('No Qualified Lead to reject', 'error');
+      return;
+    }
+
+    todayCounts.ql -= 1;
+
+    if (!todayCounts.rejected) {
+      todayCounts.rejected = 0;
+    }
+
+    todayCounts.rejected += 1;
+
+    updateStatCounts();
+    updateChart();
+    renderDailyPerformance();
+
+    await postToScript({
+      action: 'stat',
+      date: today,
+      username: currentUser,
+      category: 'ql',
+      delta: -1
+    });
+
+    await postToScript({
+      action: 'stat',
+      date: today,
+      username: currentUser,
+      category: 'rejected',
+      delta: 1
+    });
+
+    showToast('Lead rejected ✓', 'success');
+  }
 }
 
 function buildMonthPicker() {
@@ -360,11 +439,54 @@ function renderStatButtons() {
 }
 
 /* ── Click handler ───────────────────────────────────────────────── */
+async function undoLastQL(){
+  const today = todayISO();
+  if ((todayCounts.ql || 0) <= 0) {
+    showToast(
+      'No Qualified Lead to undo',
+      'error'
+    );
+    return;
+  }
+
+  todayCounts.ql--;
+
+  updateStatCounts();
+  updateChart();
+  renderDailyPerformance();
+
+  await postToScript({
+    action: 'stat',
+    date: today,
+    username: currentUser,
+    category: 'ql',
+    delta: -1
+  });
+
+  await postToScript({
+    action: 'deleteLastNote',
+    date: today,
+    username: currentUser
+  });
+
+  showToast(
+    'Qualified Lead removed',
+    'success'
+  );
+
+}
+
 async function onStatClick(e) {
   const btn   = e.target.closest('[data-action]');
   if (!btn) return;
-  const key   = btn.dataset.key;
+  const key = btn.dataset.key;
   const delta = btn.dataset.action === 'inc' ? 1 : -1;
+
+  if (key === 'ql' && delta === -1) {
+    await undoLastQL();
+    return;
+  }
+
   await recordStat(key, delta);
 }
 
@@ -462,6 +584,76 @@ async function recordStat(category, delta) {
 /* ════════════════════════════════════════════════════════════════════
    FETCH MONTHLY DATA  (v2: response is {days, ql_notes})
    ════════════════════════════════════════════════════════════════════ */
+   function renderNotifications(list){
+
+  const panel =
+  document.getElementById('notification-panel');
+
+  const count =
+  document.getElementById('notification-count');
+
+
+  if (!panel || !count) return;
+
+
+  count.textContent = list.length;
+
+
+  if (!list.length){
+
+    panel.innerHTML = `
+      <div class="notification-empty">
+        No updates
+      </div>
+    `;
+
+    return;
+  }
+
+  async function fetchNotifications(){
+
+  try {
+
+    const res = await fetch(
+      `${API_URL}?action=notifications`
+    );
+
+
+    const data = await res.json();
+
+
+    renderNotifications(
+      data.notifications || []
+    );
+
+
+  } catch(err){
+
+    console.error(
+      "Notification error:",
+      err
+    );
+
+  }
+
+}
+
+  panel.innerHTML = list.map(n => `
+
+    <div class="notification-item">
+
+      <h4>${n.title}</h4>
+
+      <p>${n.message}</p>
+
+      <small>${n.date}</small>
+
+    </div>
+
+  `).join('');
+
+}
+
 async function fetchMonthlyData() {
   if (!scriptUrl || !selectedMonth || !currentUser) return;
   showChartState('loading');

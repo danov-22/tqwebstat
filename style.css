@@ -820,3 +820,53 @@ body {
   .ql-card-inner { flex-direction: column; }
   .ql-panel-divider { width: auto; height: 1px; margin: 0 .75rem; }
 }
+
+.notification-btn {
+  position: relative;
+}
+
+
+#notification-count {
+  position:absolute;
+  top:-5px;
+  right:-5px;
+  background:red;
+  color:white;
+  font-size:11px;
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.notification-panel {
+  position:fixed;
+  top:70px;
+  right:20px
+  width:300px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px;
+  display:none;
+  z-index:300;
+}
+
+.notification-panel.open {
+  display:block;
+}
+
+.notification-item {
+  padding:12px;
+  border-bottom:1px solid var(--border);
+}
+
+.notification-item h4 {
+  margin:0 0 5px;
+}
+
+.notification-item p {
+  margin:0;
+}

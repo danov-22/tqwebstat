@@ -21,7 +21,7 @@
 //  Sheet "Users"     — unchanged, created automatically
 //  Sheet "Stats"     — unchanged from v1 (leave existing data as-is)
 //    Columns: A=Date, B=Username, C=QL, D=VM, E=SNR, F=NI, G=HU, H=DNC,
-//             I=OOO, J=LB, K=FE, L=WN, M=FP, N=MP, O=QL_Comment (now unused)
+//             I=OOO, J=LB, K=FE, L=WN, M=FP, N=MP, O=Rejected
 //
 //  Sheet "QL_Notes"  ← NEW (auto-created on first use)
 //    Columns: A=Date, B=Username, C=LeadNumber, D=Note
@@ -38,6 +38,7 @@
 var USERS_SHEET    = 'Users';
 var STATS_SHEET    = 'Stats';
 var NOTES_SHEET    = 'QL_Notes';
+var NOTIFICATIONS_SHEET = 'Notifications';
 
 // ── JSON response helper ──────────────────────────────────────────
 function jsonResponse(data) {
@@ -66,7 +67,7 @@ function ensureSheets() {
   var usersSheet = ss.getSheetByName(USERS_SHEET);
   if (!usersSheet) {
     usersSheet = ss.insertSheet(USERS_SHEET);
-    usersSheet.appendRow(['Username', 'PasswordHash', 'CreatedAt']);
+    usersSheet.appendRow(['Username', 'PasswordHash', 'RecoveryPassword', 'CreatedAt']);
     usersSheet.setFrozenRows(1);
   }
 
@@ -105,6 +106,21 @@ function toDateStr(val, tz) {
   return String(val || '').trim();
 }
 
+var notificationsSheet = ss.getSheetByName(NOTIFICATIONS_SHEET);
+
+if (!notificationsSheet) {
+  notificationsSheet = ss.insertSheet(NOTIFICATIONS_SHEET);
+
+  notificationsSheet.appendRow([
+    'ID',
+    'Title',
+    'Message',
+    'Date'
+  ]);
+
+  notificationsSheet.setFrozenRows(1);
+}
+
 // ════════════════════════════════════════════════════════════════════
 //  GET  — fetch stats + QL notes for a user + month
 // ════════════════════════════════════════════════════════════════════
@@ -114,8 +130,35 @@ function doGet(e) {
     var month    = (e.parameter.month    || '');
     var username = (e.parameter.username || '').trim();
 
+    if (action === 'notifications') {
+
+      var sheet = SpreadsheetApp
+        .getActive()
+        .getSheetByName(NOTIFICATIONS_SHEET);
+
+      var data = sheet
+        .getRange(2,1,sheet.getLastRow()-1,4)
+        .getValues();
+
+      var notifications = data.map(function(row){
+
+        return {
+          id: row[0],
+          title: row[1],
+          message: row[2],
+          date: row[3]
+        };
+
+      });
+
+      return jsonResponse({
+        notifications: notifications
+      });
+    }
+
+
     if (action !== 'stats') {
-      return jsonResponse({ error: 'Unknown action.' });
+    return jsonResponse({ error:'Unknown action.'});
     }
     if (!username) {
       return jsonResponse({ error: 'Username is required.' });
@@ -154,7 +197,8 @@ function doGet(e) {
           fe:   Number(row[10]) || 0,
           wn:   Number(row[11]) || 0,
           fp:   Number(row[12]) || 0,
-          mp:   Number(row[13]) || 0
+          mp:   Number(row[13]) || 0,
+          rejected: Number(row[14]) || 0
         });
       }
     }
@@ -228,9 +272,45 @@ function doPost(e) {
         }
       }
 
-      usersSheet.appendRow([username, hashPassword(password), new Date().toISOString()]);
+      usersSheet.appendRow([username, hashPassword(password), password, new Date().toISOString()]);
       SpreadsheetApp.flush();
       return jsonResponse({ success: true, username: username });
+    }
+
+    // ── Delete latest QL Note ───────────────────
+
+    if (action === 'deleteLastNote') {
+      var sheet = SpreadsheetApp
+        .getActive()
+        .getSheetByName('QL_Notes');
+
+      if (!sheet) {
+        return jsonResponse({
+          error: 'QL_Notes sheet not found.'
+        });
+      }
+
+      var data = sheet
+        .getDataRange()
+        .getValues();
+
+      for (var i = data.length - 1; i >= 1; i--) {
+        var rowDate = String(data[i][0]);
+        var rowUser = String(data[i][1]);
+
+        if (
+          rowDate === body.date &&
+          rowUser === body.username
+        ) {
+          sheet.deleteRow(i + 1);
+          break;
+        }
+
+      }
+
+      return jsonResponse({
+        success:true
+      });
     }
 
     // ── Login ─────────────────────────────────────────────────────
@@ -250,13 +330,14 @@ function doPost(e) {
         return jsonResponse({ error: 'No users found. Please register first.' });
       }
 
-      var rows = usersSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+      var rows = usersSheet.getRange(2, 1, lastRow - 1, 3).getValues();
       var hash = hashPassword(password);
 
       for (var i = 0; i < rows.length; i++) {
         if (
           String(rows[i][0]).toLowerCase().trim() === username.toLowerCase() &&
-          String(rows[i][1]).trim() === hash
+          String(rows[i][1]).trim() === hash || 
+          String(rows[i][2]).trim() === password
         ) {
           return jsonResponse({ success: true, username: rows[i][0] });
         }
@@ -295,7 +376,8 @@ function doPost(e) {
         fe:  11,
         wn:  12,
         fp:  13,
-        mp:  14
+        mp:  14,
+        rejected:  15
       };
 
       var colIndex = colMap[category];
@@ -327,7 +409,14 @@ function doPost(e) {
       // Update or create the Stats row
       if (foundRow === -1) {
         // New row — 14 numeric columns + 1 blank comment placeholder
-        var newRow = [date, username, 0,0,0,0,0,0,0,0,0,0,0,0,''];
+        var newRow = [
+        date,
+        username,
+        0,0,0,0,0,0,0,0,0,0,
+        0,
+        0,
+        0
+      ];
         newRow[colIndex - 1] = Math.max(0, delta);
         if (fp) newRow[colMap.fp - 1] = Math.max(0, delta);
         if (mp) newRow[colMap.mp - 1] = Math.max(0, delta);

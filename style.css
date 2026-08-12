@@ -582,6 +582,31 @@ body {
   line-height: 1.4;
 }
 
+/* ── Rejected QL button ───────────────────────────────────────── */
+.ql-delete-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, .35);
+  border-radius: 5px;
+  color: #f87171;
+  padding: .25rem .5rem;
+  font-size: .7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.ql-delete-btn:hover {
+  background: rgba(239, 68, 68, .12);
+  border-color: rgba(239, 68, 68, .6);
+  color: #ef4444;
+}
+
+.ql-delete-btn:active {
+  transform: scale(.96);
+}
+
 .ql-note-num {
   color: var(--success);
   font-weight: 700;

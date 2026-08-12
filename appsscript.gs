@@ -78,7 +78,7 @@ function ensureSheets() {
     statsSheet.appendRow([
       'Date', 'Username',
       'QL', 'VM', 'SNR', 'NI', 'HU', 'DNC', 'OOO', 'LB', 'FE', 'WN',
-      'FP', 'MP', 'QL_Comment'
+      'FP', 'MP', 'Rejected'
     ]);
     statsSheet.setFrozenRows(1);
   }
@@ -91,24 +91,11 @@ function ensureSheets() {
     notesSheet.setFrozenRows(1);
   }
 
-  return {
-    usersSheet: usersSheet,
-    statsSheet: statsSheet,
-    notesSheet: notesSheet
-  };
-}
+  // Notifications sheet
+  var notificationsSheet = ss.getSheetByName(NOTIFICATIONS_SHEET);
 
-// ── Date normaliser ───────────────────────────────────────────────
-function toDateStr(val, tz) {
-  if (val instanceof Date) {
-    return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
-  }
-  return String(val || '').trim();
-}
+  if (!notificationsSheet) {
 
-var notificationsSheet = ss.getSheetByName(NOTIFICATIONS_SHEET);
-
-if (!notificationsSheet) {
   notificationsSheet = ss.insertSheet(NOTIFICATIONS_SHEET);
 
   notificationsSheet.appendRow([
@@ -121,119 +108,168 @@ if (!notificationsSheet) {
   notificationsSheet.setFrozenRows(1);
 }
 
+  return {
+    usersSheet: usersSheet,
+    statsSheet: statsSheet,
+    notesSheet: notesSheet,
+    notificationsSheet: notificationsSheet
+  };
+}
+
+// ── Date normaliser ───────────────────────────────────────────────
+function toDateStr(val, tz) {
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+  }
+  return String(val || '').trim();
+}
+
 // ════════════════════════════════════════════════════════════════════
-//  GET  — fetch stats + QL notes for a user + month
+// GET — fetch stats + QL notes + notifications
 // ════════════════════════════════════════════════════════════════════
 function doGet(e) {
-  try {
-    var action   = (e.parameter.action   || 'stats');
-    var month    = (e.parameter.month    || '');
-    var username = (e.parameter.username || '').trim();
+try {
 
-    if (action === 'notifications') {
+  var action   = e.parameter.action || 'stats';
+  var month    = e.parameter.month || '';
+  var username = (e.parameter.username || '').trim();
 
-      var sheet = SpreadsheetApp
-        .getActive()
-        .getSheetByName(NOTIFICATIONS_SHEET);
 
-      var data = sheet
-        .getRange(2,1,sheet.getLastRow()-1,4)
-        .getValues();
+  // ── Notifications ───────────────────────────────────────────────
+  if (action === 'notifications') {
 
-      var notifications = data.map(function(row){
+    var nSheet = SpreadsheetApp.getActive()
+      .getSheetByName(NOTIFICATIONS_SHEET);
 
+    if (!nSheet || nSheet.getLastRow() <= 1) {
+      return jsonResponse({notifications: []});
+    }
+
+    var nData = nSheet
+      .getRange(2,1,nSheet.getLastRow()-1,4)
+      .getValues();
+
+    return jsonResponse({
+      notifications: nData.map(function(r){
         return {
-          id: row[0],
-          title: row[1],
-          message: row[2],
-          date: row[3]
+          id: r[0],
+          title: r[1],
+          message: r[2],
+          date: r[3]
         };
-
-      });
-
-      return jsonResponse({
-        notifications: notifications
-      });
-    }
-
-
-    if (action !== 'stats') {
-    return jsonResponse({ error:'Unknown action.'});
-    }
-    if (!username) {
-      return jsonResponse({ error: 'Username is required.' });
-    }
-
-    var sheets  = ensureSheets();
-    var tz      = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
-    var userKey = username.toLowerCase();
-
-    // ── Read Stats rows ──────────────────────────────────────────
-    var statsSheet = sheets.statsSheet;
-    var sLastRow   = statsSheet.getLastRow();
-    var days       = [];
-
-    if (sLastRow > 1) {
-      var sData = statsSheet.getRange(2, 1, sLastRow - 1, 15).getValues();
-      for (var i = 0; i < sData.length; i++) {
-        var row     = sData[i];
-        var rowUser = String(row[1]).toLowerCase().trim();
-        if (rowUser !== userKey) continue;
-
-        var dateStr = toDateStr(row[0], tz);
-        if (!dateStr) continue;
-        if (month && dateStr.substring(0, 7) !== month) continue;
-
-        days.push({
-          date: dateStr,
-          ql:   Number(row[2])  || 0,
-          vm:   Number(row[3])  || 0,
-          snr:  Number(row[4])  || 0,
-          ni:   Number(row[5])  || 0,
-          hu:   Number(row[6])  || 0,
-          dnc:  Number(row[7])  || 0,
-          ooo:  Number(row[8])  || 0,
-          lb:   Number(row[9])  || 0,
-          fe:   Number(row[10]) || 0,
-          wn:   Number(row[11]) || 0,
-          fp:   Number(row[12]) || 0,
-          mp:   Number(row[13]) || 0,
-          rejected: Number(row[14]) || 0
-        });
-      }
-    }
-
-    // ── Read QL_Notes rows ───────────────────────────────────────
-    var notesSheet = sheets.notesSheet;
-    var nLastRow   = notesSheet.getLastRow();
-    var qlNotes    = [];
-
-    if (nLastRow > 1) {
-      var nData = notesSheet.getRange(2, 1, nLastRow - 1, 4).getValues();
-      for (var j = 0; j < nData.length; j++) {
-        var nRow     = nData[j];
-        var nUser    = String(nRow[1]).toLowerCase().trim();
-        if (nUser !== userKey) continue;
-
-        var nDate = toDateStr(nRow[0], tz);
-        if (!nDate) continue;
-        if (month && nDate.substring(0, 7) !== month) continue;
-
-        var noteText = String(nRow[3] || '').trim();
-        // Include entry even if note is blank (so lead count stays accurate)
-        qlNotes.push({
-          date:       nDate,
-          leadNumber: Number(nRow[2]) || 0,
-          note:       noteText
-        });
-      }
-    }
-
-    return jsonResponse({ days: days, ql_notes: qlNotes });
-
-  } catch (err) {
-    return jsonResponse({ error: err.toString() });
+      })
+    });
   }
+
+
+  // ── Stats ───────────────────────────────────────────────────────
+  if (action !== 'stats') {
+    return jsonResponse({error:'Unknown action.'});
+  }
+
+  if (!username) {
+    return jsonResponse({error:'Username is required.'});
+  }
+
+
+  var sheets = ensureSheets();
+  var tz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+  var userKey = username.toLowerCase();
+
+
+  // ── Stats data ──────────────────────────────────────────────────
+  var days = [];
+  var statsSheet = sheets.statsSheet;
+  var sLastRow = statsSheet.getLastRow();
+
+
+  if (sLastRow > 1) {
+
+    var sData = statsSheet
+      .getRange(2,1,sLastRow-1,15)
+      .getValues();
+
+
+    sData.forEach(function(row){
+
+      if (String(row[1]).toLowerCase().trim() !== userKey) return;
+
+      var dateStr = toDateStr(row[0], tz);
+
+      if (!dateStr) return;
+      if (month && dateStr.substring(0,7) !== month) return;
+
+
+      days.push({
+        date: dateStr,
+        ql: Number(row[2]) || 0,
+        vm: Number(row[3]) || 0,
+        snr: Number(row[4]) || 0,
+        ni: Number(row[5]) || 0,
+        hu: Number(row[6]) || 0,
+        dnc: Number(row[7]) || 0,
+        ooo: Number(row[8]) || 0,
+        lb: Number(row[9]) || 0,
+        fe: Number(row[10]) || 0,
+        wn: Number(row[11]) || 0,
+        fp: Number(row[12]) || 0,
+        mp: Number(row[13]) || 0,
+        rejected: Number(row[14]) || 0
+      });
+
+    });
+
+  }
+
+
+  // ── QL Notes ────────────────────────────────────────────────────
+  var qlNotes = [];
+  var notesSheet = sheets.notesSheet;
+  var nLastRow = notesSheet.getLastRow();
+
+
+  if (nLastRow > 1) {
+
+    var notes = notesSheet
+      .getRange(2,1,nLastRow-1,4)
+      .getValues();
+
+
+    notes.forEach(function(row){
+
+      if (String(row[1]).toLowerCase().trim() !== userKey) return;
+
+
+      var dateStr = toDateStr(row[0], tz);
+
+      if (!dateStr) return;
+      if (month && dateStr.substring(0,7) !== month) return;
+
+
+      qlNotes.push({
+        date: dateStr,
+        leadNumber: Number(row[2]) || 0,
+        note: String(row[3] || '').trim()
+      });
+
+    });
+
+  }
+
+
+  return jsonResponse({
+    days: days,
+    ql_notes: qlNotes
+  });
+
+
+} catch(err) {
+
+  return jsonResponse({
+    error: err.toString()
+  });
+
+}
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -311,6 +347,38 @@ function doPost(e) {
       return jsonResponse({
         success:true
       });
+    }
+
+    // ── Create notification ─────────────────────────────
+
+    function addNotification(title, message) {
+
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+      var sheet = ss.getSheetByName(NOTIFICATIONS_SHEET);
+
+
+      if (!sheet) {
+        sheet = ss.insertSheet(NOTIFICATIONS_SHEET);
+
+        sheet.appendRow([
+          'ID',
+          'Title',
+          'Message',
+          'Date'
+        ]);
+      }
+
+
+      var id = Utilities.getUuid();
+
+      sheet.appendRow([
+        id,
+        title,
+        message,
+        new Date()
+      ]);
+
     }
 
     // ── Login ─────────────────────────────────────────────────────

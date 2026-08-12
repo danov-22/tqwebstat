@@ -37,7 +37,6 @@ let dailyChartInstance = null;
 let todayCounts = Object.fromEntries(CATEGORIES.map(c => [c.key, 0]));
 todayCounts.fp  = 0;
 todayCounts.mp  = 0;
-todayCounts.rejected = 0;
 
 /* ── DOM refs ────────────────────────────────────────────────────── */
 const authPage     = document.getElementById('auth-page');
@@ -101,7 +100,9 @@ async function handleLogin(e) {
     const res = await postToScript({ action: 'login', username, password });
     if (res.error) { showAuthError(res.error); return; }
     onLoginSuccess(res.username);
-  } catch { showAuthError('Could not reach the Apps Script. Check your URL in script.js.'); }
+  } catch (err) {
+    console.error('LOGIN ERROR:', err);
+    showAuthError('Login error: ' + err.message);}
   finally { btn.disabled = false; btn.textContent = 'Sign In'; }
 }
 
@@ -250,6 +251,22 @@ if(notificationBtn && notificationPanel){
     if (selectedDayIndex < monthlyData.length - 1) { selectedDayIndex++; renderDailyPerformance(); }
   });
 
+  // Rejected button — remove QL + its note
+  document.addEventListener('click', async e => {
+
+    const btn = e.target.closest('.ql-delete-btn');
+
+    if (!btn) return;
+
+    e.stopPropagation();
+
+    await deleteQL(
+      btn.dataset.date,
+      btn.dataset.lead
+    );
+
+  });
+
   // Daily performance hover → trend chart
   const dailyCard      = document.getElementById('daily-perf-card');
   const dailySummary   = document.getElementById('daily-summary');
@@ -266,45 +283,42 @@ if(notificationBtn && notificationPanel){
     dailyChartWrap.style.display = 'none';
   });
 
-  async function rejectQualifiedLead() {
+async function deleteQL(date, leadNumber) {
 
-    const today = todayISO();
+  if (!confirm('Reject this Qualified Lead?')) return;
 
-    if ((todayCounts.ql || 0) <= 0) {
-      showToast('No Qualified Lead to reject', 'error');
-      return;
-    }
+  try {
 
-    todayCounts.ql -= 1;
-
-    if (!todayCounts.rejected) {
-      todayCounts.rejected = 0;
-    }
-
-    todayCounts.rejected += 1;
-
-    updateStatCounts();
-    updateChart();
-    renderDailyPerformance();
-
-    await postToScript({
-      action: 'stat',
-      date: today,
-      username: currentUser,
-      category: 'ql',
-      delta: -1
+    const result = await postToScript({
+      action: 'deleteQL',
+      date,
+      leadNumber: Number(leadNumber),
+      username: currentUser
     });
 
-    await postToScript({
-      action: 'stat',
-      date: today,
-      username: currentUser,
-      category: 'rejected',
-      delta: 1
-    });
+    if (result.error) {
+      throw new Error(result.error);
+    }
 
-    showToast('Lead rejected ✓', 'success');
+    showToast('Qualified Lead rejected', 'success');
+
+    // Reload everything:
+    // - QL count
+    // - QL notes
+    // - Today's Notes
+    // - Daily Performance
+    // - Chart
+    await fetchMonthlyData();
+
+  } catch (err) {
+
+    console.error('deleteQL failed:', err);
+
+    showToast('Failed to reject Qualified Lead', 'error');
+
   }
+}
+
 }
 
 function buildMonthPicker() {
@@ -610,34 +624,6 @@ async function recordStat(category, delta) {
     return;
   }
 
-  async function fetchNotifications(){
-
-  try {
-
-    const res = await fetch(
-      `${API_URL}?action=notifications`
-    );
-
-
-    const data = await res.json();
-
-
-    renderNotifications(
-      data.notifications || []
-    );
-
-
-  } catch(err){
-
-    console.error(
-      "Notification error:",
-      err
-    );
-
-  }
-
-}
-
   panel.innerHTML = list.map(n => `
 
     <div class="notification-item">
@@ -841,8 +827,23 @@ function renderDailyPerformance() {
 
   notesEl.innerHTML = notesList.map(n => `
     <div class="ql-note-item">
-      <span class="ql-note-num">Lead ${n.leadNumber}</span>
-      ${n.note ? `<span class="ql-note-text">${escapeHtml(n.note)}</span>` : '<span class="ql-note-text ql-note-no-text">—</span>'}
+
+      <span class="ql-note-num">
+        Lead ${n.leadNumber}
+      </span>
+
+      ${n.note 
+        ? `<span class="ql-note-text">${escapeHtml(n.note)}</span>` 
+        : '<span class="ql-note-text ql-note-no-text">—</span>'
+      }
+
+      <button 
+        class="ql-delete-btn"
+        data-date="${row.date}"
+        data-lead="${n.leadNumber}">
+        Rejected
+      </button>
+
     </div>
   `).join('');
 }
@@ -852,7 +853,9 @@ function renderQLNotesToday() {
   const container = document.getElementById('ql-notes-today');
   if (!container) return;
 
-  const notes = qlNotesByDate[todayISO()] || [];
+  const today = todayISO();
+  const notes = qlNotesByDate[today] || [];
+
   if (notes.length === 0) {
     container.innerHTML = '<div class="ql-notes-empty">No notes yet</div>';
     return;
@@ -860,8 +863,24 @@ function renderQLNotesToday() {
 
   container.innerHTML = [...notes].reverse().map(n => `
     <div class="ql-note-item">
-      <span class="ql-note-num">Lead ${n.leadNumber}</span>
-      ${n.note ? `<span class="ql-note-text">${escapeHtml(n.note)}</span>` : '<span class="ql-note-text ql-note-no-text">—</span>'}
+
+      <span class="ql-note-num">
+        Lead ${n.leadNumber}
+      </span>
+
+      ${n.note
+        ? `<span class="ql-note-text">${escapeHtml(n.note)}</span>`
+        : '<span class="ql-note-text ql-note-no-text">—</span>'
+      }
+
+      <button
+        type="button"
+        class="ql-delete-btn"
+        data-date="${today}"
+        data-lead="${n.leadNumber}">
+        Rejected
+      </button>
+
     </div>
   `).join('');
 }

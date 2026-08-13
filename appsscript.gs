@@ -78,7 +78,7 @@ function ensureSheets() {
     statsSheet.appendRow([
       'Date', 'Username',
       'QL', 'VM', 'SNR', 'NI', 'HU', 'DNC', 'OOO', 'LB', 'FE', 'WN',
-      'FP', 'MP', 'Rejected'
+      'FP', 'MP'
     ]);
     statsSheet.setFrozenRows(1);
   }
@@ -122,6 +122,57 @@ function toDateStr(val, tz) {
     return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
   }
   return String(val || '').trim();
+}
+
+// A short per-user/month cache avoids reading every Stats and QL_Notes row
+// each time the dashboard opens. Every stat mutation clears its own cache.
+function statsCacheKey(username, month) {
+  var source = String(username || '').toLowerCase().trim() + '|' + String(month || '');
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, source);
+  var digest = bytes.map(function(b) {
+    return ('0' + (b & 0xff).toString(16)).slice(-2);
+  }).join('');
+  return 'tq_stats_' + digest;
+}
+
+function clearStatsCache(username, date) {
+  CacheService.getScriptCache().remove(
+    statsCacheKey(username, String(date || '').substring(0, 7))
+  );
+}
+
+function statsRowCacheKey(date, username) {
+  return 'tq_stats_row_' + statsCacheKey(username, date);
+}
+
+// Finds a daily Stats row without repeatedly reading the entire sheet. Cache
+// entries are verified before use, so a stale cache cannot update another row.
+function findStatsRow(statsSheet, date, username, tz) {
+  var key = statsRowCacheKey(date, username);
+  var cache = CacheService.getScriptCache();
+  var cachedRow = Number(cache.get(key));
+  var userKey = String(username).toLowerCase().trim();
+
+  if (cachedRow >= 2 && cachedRow <= statsSheet.getLastRow()) {
+    var cachedValues = statsSheet.getRange(cachedRow, 1, 1, 2).getValues()[0];
+    if (toDateStr(cachedValues[0], tz) === date &&
+        String(cachedValues[1]).toLowerCase().trim() === userKey) {
+      return cachedRow;
+    }
+  }
+
+  var lastRow = statsSheet.getLastRow();
+  if (lastRow <= 1) return -1;
+  var rows = statsSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (toDateStr(rows[i][0], tz) === date &&
+        String(rows[i][1]).toLowerCase().trim() === userKey) {
+      var foundRow = i + 2;
+      cache.put(key, String(foundRow), 21600);
+      return foundRow;
+    }
+  }
+  return -1;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -171,6 +222,12 @@ try {
     return jsonResponse({error:'Username is required.'});
   }
 
+  var cachedStats = CacheService.getScriptCache().get(statsCacheKey(username, month));
+  if (cachedStats) {
+    return ContentService.createTextOutput(cachedStats)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
 
   var sheets = ensureSheets();
   var tz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
@@ -186,7 +243,7 @@ try {
   if (sLastRow > 1) {
 
     var sData = statsSheet
-      .getRange(2,1,sLastRow-1,15)
+      .getRange(2,1,sLastRow-1,14)
       .getValues();
 
 
@@ -213,8 +270,7 @@ try {
         fe: Number(row[10]) || 0,
         wn: Number(row[11]) || 0,
         fp: Number(row[12]) || 0,
-        mp: Number(row[13]) || 0,
-        rejected: Number(row[14]) || 0
+        mp: Number(row[13]) || 0
       });
 
     });
@@ -257,10 +313,16 @@ try {
   }
 
 
-  return jsonResponse({
+  var statsResponse = {
     days: days,
     ql_notes: qlNotes
-  });
+  };
+  CacheService.getScriptCache().put(
+    statsCacheKey(username, month),
+    JSON.stringify(statsResponse),
+    60
+  );
+  return jsonResponse(statsResponse);
 
 
 } catch(err) {
@@ -312,6 +374,242 @@ function doPost(e) {
       SpreadsheetApp.flush();
       return jsonResponse({ success: true, username: username });
     }
+
+    // ── Undo latest QL atomically ────────────────────────────────
+    // Keeping the count and its note in one locked operation avoids the
+    // two-request race that made undo slow and occasionally inconsistent.
+    if (action === 'undoLastQL') {
+      var undoDate = String(body.date || '').trim();
+      var undoUsername = String(body.username || '').trim();
+      if (!undoDate || !undoUsername) {
+        return jsonResponse({ error: 'Date and username are required.' });
+      }
+
+      var undoLock = LockService.getScriptLock();
+      undoLock.waitLock(10000);
+      try {
+        var undoSheets = ensureSheets();
+        var undoStats = undoSheets.statsSheet;
+        var undoNotes = undoSheets.notesSheet;
+        var undoTz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+        var undoUserKey = undoUsername.toLowerCase();
+        var undoStatsRow = -1;
+        var undoLastStatsRow = undoStats.getLastRow();
+
+        if (undoLastStatsRow > 1) {
+          var undoRows = undoStats.getRange(2, 1, undoLastStatsRow - 1, 2).getValues();
+          for (var u = 0; u < undoRows.length; u++) {
+            if (toDateStr(undoRows[u][0], undoTz) === undoDate &&
+                String(undoRows[u][1]).toLowerCase().trim() === undoUserKey) {
+              undoStatsRow = u + 2;
+              break;
+            }
+          }
+        }
+
+        if (undoStatsRow === -1) {
+          return jsonResponse({ error: 'No Qualified Lead to undo.' });
+        }
+
+        var undoRange = undoStats.getRange(undoStatsRow, 1, 1, 14);
+        var undoValues = undoRange.getValues()[0];
+        if ((Number(undoValues[2]) || 0) <= 0) {
+          return jsonResponse({ error: 'No Qualified Lead to undo.' });
+        }
+        undoValues[2] = Math.max(0, (Number(undoValues[2]) || 0) - 1);
+        undoValues[12] = Math.max(0, (Number(undoValues[12]) || 0) - 1);
+        undoValues[13] = Math.max(0, (Number(undoValues[13]) || 0) - 1);
+        undoRange.setValues([undoValues]);
+
+        var undoLastNoteRow = undoNotes.getLastRow();
+        if (undoLastNoteRow > 1) {
+          var undoNoteRows = undoNotes.getRange(2, 1, undoLastNoteRow - 1, 2).getValues();
+          for (var n = undoNoteRows.length - 1; n >= 0; n--) {
+            if (toDateStr(undoNoteRows[n][0], undoTz) === undoDate &&
+                String(undoNoteRows[n][1]).toLowerCase().trim() === undoUserKey) {
+              undoNotes.deleteRow(n + 2);
+              break;
+            }
+          }
+        }
+        SpreadsheetApp.flush();
+        clearStatsCache(undoUsername, undoDate);
+        return jsonResponse({ success: true });
+      } finally {
+        undoLock.releaseLock();
+      }
+    }
+
+// ── Delete specific QL + its note ─────────────────────────────
+
+if (action === 'deleteQL') {
+
+  var date = String(body.date || '').trim();
+  var username = String(body.username || '').trim();
+  var leadNumber = Number(body.leadNumber);
+
+  if (!date || !username || !leadNumber) {
+    return jsonResponse({
+      error: 'Date, username and lead number are required.'
+    });
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+
+    var sheets = ensureSheets();
+    var statsSheet = sheets.statsSheet;
+    var notesSheet = sheets.notesSheet;
+
+    var tz = SpreadsheetApp
+      .getActive()
+      .getSpreadsheetTimeZone();
+
+    var userKey = username.toLowerCase().trim();
+
+    // ============================================================
+    // 1. DELETE THE SPECIFIC QL NOTE
+    // ============================================================
+
+    var noteLastRow = notesSheet.getLastRow();
+
+    if (noteLastRow > 1) {
+
+      var noteData = notesSheet
+        .getRange(2, 1, noteLastRow - 1, 4)
+        .getValues();
+
+      for (var i = noteData.length - 1; i >= 0; i--) {
+
+        var rowDate = toDateStr(noteData[i][0], tz);
+        var rowUser = String(noteData[i][1])
+          .toLowerCase()
+          .trim();
+
+        var rowLead = Number(noteData[i][2]);
+
+        if (
+          rowDate === date &&
+          rowUser === userKey &&
+          rowLead === leadNumber
+        ) {
+
+          notesSheet.deleteRow(i + 2);
+          break;
+
+        }
+
+      }
+
+    }
+
+
+    // ============================================================
+    // 2. DECREASE QL COUNT BY 1
+    // ============================================================
+
+    var statsLastRow = statsSheet.getLastRow();
+    var statsRow = -1;
+
+    if (statsLastRow > 1) {
+
+      var statsData = statsSheet
+        .getRange(2, 1, statsLastRow - 1, 2)
+        .getValues();
+
+      for (var j = 0; j < statsData.length; j++) {
+
+        var statsDate = toDateStr(statsData[j][0], tz);
+        var statsUser = String(statsData[j][1])
+          .toLowerCase()
+          .trim();
+
+        if (
+          statsDate === date &&
+          statsUser === userKey
+        ) {
+
+          statsRow = j + 2;
+          break;
+
+        }
+
+      }
+
+    }
+
+
+    if (statsRow !== -1) {
+
+      var qlCell = statsSheet.getRange(statsRow, 3);
+      var currentQL = Number(qlCell.getValue()) || 0;
+
+      qlCell.setValue(Math.max(0, currentQL - 1));
+
+    }
+
+
+    // ============================================================
+    // 3. RENUMBER REMAINING LEADS
+    // ============================================================
+
+    noteLastRow = notesSheet.getLastRow();
+
+    if (noteLastRow > 1) {
+
+      var remainingNotes = notesSheet
+        .getRange(2, 1, noteLastRow - 1, 4)
+        .getValues();
+
+      var nextLeadNumber = 1;
+
+      for (var k = 0; k < remainingNotes.length; k++) {
+
+        var remainingDate = toDateStr(
+          remainingNotes[k][0],
+          tz
+        );
+
+        var remainingUser = String(remainingNotes[k][1])
+          .toLowerCase()
+          .trim();
+
+        if (
+          remainingDate === date &&
+          remainingUser === userKey
+        ) {
+
+          notesSheet
+            .getRange(k + 2, 3)
+            .setValue(nextLeadNumber);
+
+          nextLeadNumber++;
+
+        }
+
+      }
+
+    }
+
+
+    SpreadsheetApp.flush();
+    clearStatsCache(username, date);
+
+    return jsonResponse({
+      success: true,
+      message: 'Qualified Lead rejected.',
+      deletedLeadNumber: leadNumber
+    });
+
+  } finally {
+
+    lock.releaseLock();
+
+  }
+
+}
 
     // ── Delete latest QL Note ───────────────────
 
@@ -381,162 +679,236 @@ function doPost(e) {
 
     }
 
-    // ── Login ─────────────────────────────────────────────────────
-    if (action === 'login') {
-      var username = String(body.username || '').trim();
-      var password = String(body.password || '').trim();
+// ── Login ─────────────────────────────────────────────────────
+if (action === 'login') {
 
-      if (!username || !password) {
-        return jsonResponse({ error: 'Username and password are required.' });
-      }
+  var username = String(body.username || '').trim();
+  var password = String(body.password || '').trim();
 
-      var sheets     = ensureSheets();
-      var usersSheet = sheets.usersSheet;
-      var lastRow    = usersSheet.getLastRow();
+  if (!username || !password) {
+    return jsonResponse({
+      error: 'Username and password are required.'
+    });
+  }
 
-      if (lastRow <= 1) {
-        return jsonResponse({ error: 'No users found. Please register first.' });
-      }
+  var sheets = ensureSheets();
+  var usersSheet = sheets.usersSheet;
+  var lastRow = usersSheet.getLastRow();
 
-      var rows = usersSheet.getRange(2, 1, lastRow - 1, 3).getValues();
-      var hash = hashPassword(password);
+  if (lastRow <= 1) {
+    return jsonResponse({
+      error: 'No users found. Please register first.'
+    });
+  }
 
-      for (var i = 0; i < rows.length; i++) {
-        if (
-          String(rows[i][0]).toLowerCase().trim() === username.toLowerCase() &&
-          String(rows[i][1]).trim() === hash || 
-          String(rows[i][2]).trim() === password
-        ) {
-          return jsonResponse({ success: true, username: rows[i][0] });
-        }
-      }
+  var rows = usersSheet
+    .getRange(2, 1, lastRow - 1, 3)
+    .getValues();
 
-      return jsonResponse({ error: 'Invalid username or password.' });
+  var hash = hashPassword(password);
+
+  for (var i = 0; i < rows.length; i++) {
+
+    var storedUsername = String(rows[i][0])
+      .toLowerCase()
+      .trim();
+
+    var storedHash = String(rows[i][1]).trim();
+    var recoveryPassword = String(rows[i][2]).trim();
+
+    if (
+      storedUsername === username.toLowerCase() &&
+      (
+        storedHash === hash ||
+        recoveryPassword === password
+      )
+    ) {
+
+      return jsonResponse({
+        success: true,
+        username: rows[i][0]
+      });
+
+    }
+  }
+
+  return jsonResponse({
+    error: 'Invalid username or password.'
+  });
+}
+
+// ── Record stat ───────────────────────────────────────────────
+if (action === 'stat') {
+
+  var date      = String(body.date     || '').trim();
+  var username  = String(body.username || '').trim();
+  var category  = String(body.category || '').toLowerCase();
+  var delta     = Number(body.delta)   || 0;
+  var fp        = body.fp === true;
+  var mp        = body.mp === true;
+  var qlNote    = String(body.ql_note || '').trim();
+
+  if (!date || !username || !category) {
+    return jsonResponse({
+      error: 'Missing required fields.'
+    });
+  }
+
+  // Column map — 1-indexed
+  // A=Date
+  // B=Username
+  // C=QL
+  // D=VM
+  // E=SNR
+  // F=NI
+  // G=HU
+  // H=DNC
+  // I=OOO
+  // J=LB
+  // K=FE
+  // L=WN
+  // M=FP
+  // N=MP
+  var colMap = {
+    ql:  3,
+    vm:  4,
+    snr: 5,
+    ni:  6,
+    hu:  7,
+    dnc: 8,
+    ooo: 9,
+    lb:  10,
+    fe:  11,
+    wn:  12,
+    fp:  13,
+    mp:  14
+  };
+
+  var colIndex = colMap[category];
+
+  if (!colIndex) {
+    return jsonResponse({
+      error: 'Unknown category: ' + category
+    });
+  }
+
+  var sheets     = ensureSheets();
+  var statsSheet = sheets.statsSheet;
+  var notesSheet = sheets.notesSheet;
+
+  var tz     = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+  var userKey = username.toLowerCase();
+
+  // ------------------------------------------------------------
+  // Find today's row for this user
+  // ------------------------------------------------------------
+
+  var foundRow = findStatsRow(statsSheet, date, username, tz);
+
+  // ------------------------------------------------------------
+  // Create row if it doesn't exist
+  // ------------------------------------------------------------
+
+  if (foundRow === -1) {
+
+    var newRow = [
+      date,
+      username,
+      0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0,
+      0,
+      0
+    ];
+
+    newRow[colIndex - 1] = Math.max(0, delta);
+
+    if (fp) {
+      newRow[colMap.fp - 1] = Math.max(0, delta);
     }
 
-    // ── Record stat ───────────────────────────────────────────────
-    if (action === 'stat') {
-      var date      = String(body.date     || '').trim();
-      var username  = String(body.username || '').trim();
-      var category  = String(body.category || '').toLowerCase();
-      var delta     = Number(body.delta)   || 0;
-      var fp        = body.fp === true;
-      var mp        = body.mp === true;
-      var qlNote    = String(body.ql_note  || '').trim(); // note text (may be empty)
-
-      if (!date || !username || !category) {
-        return jsonResponse({ error: 'Missing required fields.' });
-      }
-
-      // Column map — 1-indexed (Stats sheet)
-      // A=1:Date  B=2:Username  C=3:QL  D=4:VM  E=5:SNR  F=6:NI
-      // G=7:HU   H=8:DNC       I=9:OOO J=10:LB K=11:FE  L=12:WN
-      // M=13:FP  N=14:MP       O=15:QL_Comment (deprecated, not written)
-      var colMap = {
-        ql:  3,
-        vm:  4,
-        snr: 5,
-        ni:  6,
-        hu:  7,
-        dnc: 8,
-        ooo: 9,
-        lb:  10,
-        fe:  11,
-        wn:  12,
-        fp:  13,
-        mp:  14,
-        rejected:  15
-      };
-
-      var colIndex = colMap[category];
-      if (!colIndex) {
-        return jsonResponse({ error: 'Unknown category: ' + category });
-      }
-
-      var sheets     = ensureSheets();
-      var statsSheet = sheets.statsSheet;
-      var tz         = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
-      var foundRow   = -1;
-      var userKey    = username.toLowerCase();
-
-      // Find existing Stats row for this date + username
-      var sLastRow = statsSheet.getLastRow();
-      if (sLastRow > 1) {
-        var dateRows = statsSheet.getRange(2, 1, sLastRow - 1, 2).getValues();
-        for (var i = 0; i < dateRows.length; i++) {
-          if (
-            toDateStr(dateRows[i][0], tz) === date &&
-            String(dateRows[i][1]).toLowerCase().trim() === userKey
-          ) {
-            foundRow = i + 2;
-            break;
-          }
-        }
-      }
-
-      // Update or create the Stats row
-      if (foundRow === -1) {
-        // New row — 14 numeric columns + 1 blank comment placeholder
-        var newRow = [
-        date,
-        username,
-        0,0,0,0,0,0,0,0,0,0,
-        0,
-        0,
-        0
-      ];
-        newRow[colIndex - 1] = Math.max(0, delta);
-        if (fp) newRow[colMap.fp - 1] = Math.max(0, delta);
-        if (mp) newRow[colMap.mp - 1] = Math.max(0, delta);
-        statsSheet.appendRow(newRow);
-      } else {
-        var cell    = statsSheet.getRange(foundRow, colIndex);
-        var curVal  = Number(cell.getValue()) || 0;
-        cell.setValue(Math.max(0, curVal + delta));
-
-        if (fp) {
-          var fpCell = statsSheet.getRange(foundRow, colMap.fp);
-          fpCell.setValue(Math.max(0, (Number(fpCell.getValue()) || 0) + delta));
-        }
-        if (mp) {
-          var mpCell = statsSheet.getRange(foundRow, colMap.mp);
-          mpCell.setValue(Math.max(0, (Number(mpCell.getValue()) || 0) + delta));
-        }
-      }
-      SpreadsheetApp.flush();
-
-      // ── Append QL note (v2 behaviour: one row per note) ─────────
-      // Only on +1, and only for ql category.
-      // Even if note is blank we still record the lead entry so
-      // the lead number in the notes panel stays in sync with the count.
-      if (category === 'ql' && delta === 1) {
-        var notesSheet = sheets.notesSheet;
-
-        // Count how many notes this user already has for this date
-        // to derive the next lead number.
-        var nLastRow   = notesSheet.getLastRow();
-        var leadNumber = 1;
-
-        if (nLastRow > 1) {
-          var nData = notesSheet.getRange(2, 1, nLastRow - 1, 3).getValues();
-          for (var j = 0; j < nData.length; j++) {
-            if (
-              toDateStr(nData[j][0], tz) === date &&
-              String(nData[j][1]).toLowerCase().trim() === userKey
-            ) {
-              leadNumber++;
-            }
-          }
-        }
-
-        notesSheet.appendRow([date, username, leadNumber, qlNote]);
-        SpreadsheetApp.flush();
-
-        return jsonResponse({ success: true, leadNumber: leadNumber, note: qlNote });
-      }
-
-      return jsonResponse({ success: true });
+    if (mp) {
+      newRow[colMap.mp - 1] = Math.max(0, delta);
     }
+
+    statsSheet.appendRow(newRow);
+    CacheService.getScriptCache().put(
+      statsRowCacheKey(date, username),
+      String(statsSheet.getLastRow()),
+      21600
+    );
+
+  } else {
+
+    // ----------------------------------------------------------
+    // Read the whole stats row ONCE
+    // instead of repeatedly calling getValue()/setValue()
+    // ----------------------------------------------------------
+
+    var rowRange = statsSheet.getRange(foundRow, 1, 1, 14);
+    var rowValues = rowRange.getValues()[0];
+
+    rowValues[colIndex - 1] =
+      Math.max(0, (Number(rowValues[colIndex - 1]) || 0) + delta);
+
+    if (fp) {
+      rowValues[colMap.fp - 1] =
+        Math.max(0, (Number(rowValues[colMap.fp - 1]) || 0) + delta);
+    }
+
+    if (mp) {
+      rowValues[colMap.mp - 1] =
+        Math.max(0, (Number(rowValues[colMap.mp - 1]) || 0) + delta);
+    }
+
+    rowRange.setValues([rowValues]);
+  }
+
+  clearStatsCache(username, date);
+
+  // ------------------------------------------------------------
+  // QL note
+  // ------------------------------------------------------------
+
+  if (category === 'ql' && delta === 1) {
+
+    var leadNumber = 1;
+    var nLastRow   = notesSheet.getLastRow();
+
+    if (nLastRow > 1) {
+
+      var nData = notesSheet
+        .getRange(2, 1, nLastRow - 1, 3)
+        .getValues();
+
+      for (var j = 0; j < nData.length; j++) {
+
+        var noteDate = toDateStr(nData[j][0], tz);
+        var noteUser = String(nData[j][1]).toLowerCase().trim();
+
+        if (noteDate === date && noteUser === userKey) {
+          leadNumber++;
+        }
+      }
+    }
+
+    notesSheet.appendRow([
+      date,
+      username,
+      leadNumber,
+      qlNote
+    ]);
+
+    return jsonResponse({
+      success: true,
+      leadNumber: leadNumber,
+      note: qlNote
+    });
+  }
+
+  return jsonResponse({
+    success: true
+  });
+}
 
     return jsonResponse({ error: 'Unknown action: ' + action });
 

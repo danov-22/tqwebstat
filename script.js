@@ -4,7 +4,7 @@
 
 /* ── Hardcoded Apps Script URL ───────────────────────────────────── */
 // ← PASTE YOUR APPS SCRIPT WEB APP URL HERE
-const SUPABASE_URL = 'https://aikfqtnrttbscszmofpv.supabase.co/rest/v1/';
+const SUPABASE_URL = 'https://aikfqtnrttbscszmofpv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpa2ZxdG5ydHRic2Nzem1vZnB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NzI4MTgsImV4cCI6MjEwMjE0ODgxOH0.k0I1ao7SiF3ieKyEGYKxlRgF3sUXs_0iOF-a_56SM9M';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 

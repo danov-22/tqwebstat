@@ -178,7 +178,7 @@ function findStatsRow(statsSheet, date, username, tz) {
 // ════════════════════════════════════════════════════════════════════
 // GET — fetch stats + QL notes + notifications
 // ════════════════════════════════════════════════════════════════════
-function doGet(e) {
+function apiGet(e) {
 try {
 
   var action   = e.parameter.action || 'stats';
@@ -332,6 +332,34 @@ try {
   });
 
 }
+}
+
+// Web-app UI entry point. The old HTTP API remains available internally via
+// apiGet/doPost, but the browser no longer calls it over ContentService.
+function doGet() {
+  return HtmlService.createTemplateFromFile('index')
+    .evaluate()
+    .setTitle('TQ Statistics')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function serverRequest(payload) {
+  var output = doPost({ postData: { contents: JSON.stringify(payload) } });
+  return JSON.parse(output.getContent());
+}
+
+function serverMonthlyData(month, username) {
+  var output = apiGet({ parameter: { action: 'stats', month: month, username: username } });
+  return JSON.parse(output.getContent());
+}
+
+function serverNotifications() {
+  var output = apiGet({ parameter: { action: 'notifications' } });
+  return JSON.parse(output.getContent());
 }
 
 // ════════════════════════════════════════════════════════════════════

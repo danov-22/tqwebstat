@@ -4,9 +4,7 @@
 
 /* ── Hardcoded Apps Script URL ───────────────────────────────────── */
 // ← PASTE YOUR APPS SCRIPT WEB APP URL HERE
-const SUPABASE_URL = 'https://aikfqtnrttbscszmofpv.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpa2ZxdG5ydHRic2Nzem1vZnB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NzI4MTgsImV4cCI6MjEwMjE0ODgxOH0.k0I1ao7SiF3ieKyEGYKxlRgF3sUXs_0iOF-a_56SM9M';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const API_URL = 'Apps Script Web App';
 
 /* ── Category definitions ────────────────────────────────────────── */
 // key   = must match Apps Script colMap
@@ -28,7 +26,6 @@ const CATEGORIES = [
 
 /* ── App state ───────────────────────────────────────────────────── */
 let currentUser       = null;
-let currentUserId     = null;
 let selectedMonth     = '';
 let monthlyData       = [];   // [{date, ql, vm, snr, ...}, ...]
 let qlNotesByDate     = {};   // {'YYYY-MM-DD': [{leadNumber, note}, ...]}
@@ -99,9 +96,7 @@ async function handleLogin(e) {
   const btn      = document.getElementById('login-btn');
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    // Apps Script cold starts can take well over 15 seconds. Authentication
-    // is safe to wait longer for because it has no duplicate-write risk.
-    const res = await signInWithUsername(username, password);
+    const res = await postToScript({ action: 'login', username, password });
     if (res.error) { showAuthError(res.error); return; }
     onLoginSuccess(res.username);
   } catch (err) {
@@ -122,7 +117,7 @@ async function handleRegister(e) {
   if (password !== confirm) { showAuthError('Passwords do not match.'); return; }
   btn.disabled = true; btn.textContent = 'Creating account…';
   try {
-    const res = await registerWithUsername(username, password);
+    const res = await postToScript({ action: 'register', username, password });
     if (res.error) { showAuthError(res.error); return; }
     onLoginSuccess(res.username);
   } catch { showAuthError('Could not reach the Apps Script. Check your URL in script.js.'); }
@@ -141,7 +136,6 @@ function formatUsername(username) {
 
 function onLoginSuccess(username) {
   currentUser = username;
-  savesPaused = false;
   localStorage.setItem('tq_user', username);
 
   authPage.style.display = 'none';
@@ -153,9 +147,7 @@ function onLoginSuccess(username) {
 }
 
 function doLogout() {
-  db.auth.signOut();
   currentUser = null;
-  currentUserId = null;
   localStorage.removeItem('tq_user');
   appPage.classList.remove('visible');
   authPage.style.display = '';
@@ -170,60 +162,17 @@ function doLogout() {
 
 document.getElementById('btn-logout').addEventListener('click', doLogout);
 
-function normalizeUsername(username) {
-  return String(username || '').trim().replace(/\s+/g, ' ');
-}
-
-function usernameToAuthEmail(username) {
-  const bytes = new TextEncoder().encode(normalizeUsername(username).toLowerCase());
-  const encoded = btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-  return `user_${encoded}@tqwebstats.invalid`;
-}
-
-async function signInWithUsername(username, password) {
-  const { data, error } = await db.auth.signInWithPassword({
-    email: usernameToAuthEmail(username), password
-  });
-  if (error) throw error;
-  currentUserId = data.user.id;
-  const { data: profile, error: profileError } = await db
-    .from('profiles').select('username').eq('id', currentUserId).single();
-  if (profileError) throw profileError;
-  return { username: profile.username };
-}
-
-async function registerWithUsername(username, password) {
-  username = normalizeUsername(username);
-  const { data, error } = await db.auth.signUp({
-    email: usernameToAuthEmail(username), password,
-    options: { data: { username } }
-  });
-  if (error) throw error;
-  if (!data.session || !data.user) {
-    throw new Error('Account created. Disable Confirm email in Supabase Auth settings, then sign in.');
-  }
-  currentUserId = data.user.id;
-  return { username };
-}
 
 async function postToScript(payload) {
-  let request;
-  if (payload.action === 'stat') {
-    request = db.rpc('record_stat', {
-      p_date: payload.date, p_category: payload.category, p_delta: payload.delta,
-      p_fp: payload.fp === true, p_mp: payload.mp === true, p_note: payload.ql_note || ''
-    });
-  } else if (payload.action === 'undoLastQL') {
-    request = db.rpc('undo_last_ql', { p_date: payload.date });
-  } else if (payload.action === 'deleteQL') {
-    request = db.rpc('delete_ql', { p_date: payload.date, p_lead_number: Number(payload.leadNumber) });
-  } else {
-    throw new Error('Unsupported request.');
-  }
-  const { data, error } = await request;
-  if (error) throw error;
-  return data || { success: true };
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(result => {
+        if (result && result.error) reject(new Error(result.error));
+        else resolve(result || { success: true });
+      })
+      .withFailureHandler(error => reject(new Error(error.message || error)))
+      .serverRequest(payload);
+  });
 }
 
 
@@ -302,7 +251,17 @@ async function processSaveQueue() {
    INIT
    ════════════════════════════════════════════════════════════════════ */
 async function fetchNotifications() {
-  renderNotifications([]);
+  try {
+    const data = await new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve)
+        .withFailureHandler(error => reject(new Error(error.message || error)))
+        .serverNotifications();
+    });
+    renderNotifications(Array.isArray(data && data.notifications) ? data.notifications : []);
+  } catch (err) {
+    console.warn('Notifications unavailable:', err);
+    renderNotifications([]);
+  }
 }
 
 function initApp() {
@@ -491,12 +450,7 @@ function renderStatButtons() {
 
             <div class="stat-actions">
               <button class="btn btn-increment" data-action="inc" data-key="${cat.key}">+ Qualified Lead</button>
-              <button class="btn btn-undo"      data-action="dec" data-key="${cat.key}" aria-label="Undo">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
-                </svg>
-              </button>
+              <button class="btn btn-undo" data-action="dec" data-key="${cat.key}" aria-label="Undo">↶</button>
             </div>
           </div>
 
@@ -539,12 +493,7 @@ function renderStatButtons() {
         ${qualityHTML}
         <div class="stat-actions">
           <button class="btn btn-increment" data-action="inc" data-key="${cat.key}">${cat.label}</button>
-          <button class="btn btn-undo"      data-action="dec" data-key="${cat.key}" aria-label="Undo">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
-            </svg>
-          </button>
+          <button class="btn btn-undo" data-action="dec" data-key="${cat.key}" aria-label="Undo">↶</button>
         </div>
       `;
     }
@@ -763,11 +712,11 @@ function renderNotifications(list = []) {
 
     <div class="notification-item">
 
-      <h4>${n.title}</h4>
+      <h4>${escapeHtml(String(n.title || 'Update'))}</h4>
 
-      <p>${n.message}</p>
+      <p>${escapeHtml(String(n.message || ''))}</p>
 
-      <small>${n.date}</small>
+      <small>${escapeHtml(String(n.date || ''))}</small>
 
     </div>
 
@@ -776,30 +725,26 @@ function renderNotifications(list = []) {
 }
 
 async function fetchMonthlyData() {
-  if (!selectedMonth || !currentUserId) return false;
+  if (!selectedMonth || !currentUser) return false;
   showChartState('loading');
 
   try {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const start = `${selectedMonth}-01`;
-    const end = `${year + (month === 12 ? 1 : 0)}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`;
-    const [{ data: days, error: statsError }, { data: qlNotes, error: notesError }] = await Promise.all([
-      db.from('daily_stats').select('stat_date, ql, vm, snr, ni, hu, dnc, ooo, lb, fe, wn, fp, mp')
-        .gte('stat_date', start).lt('stat_date', end).order('stat_date'),
-      db.from('ql_notes').select('stat_date, lead_number, note')
-        .gte('stat_date', start).lt('stat_date', end).order('lead_number')
-    ]);
-    if (statsError) throw statsError;
-    if (notesError) throw notesError;
-
-    monthlyData = normalizeMonthlyData((days || []).map(row => ({ ...row, date: row.stat_date })));
+    const json = await new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve)
+        .withFailureHandler(error => reject(new Error(error.message || error)))
+        .serverMonthlyData(selectedMonth, currentUser);
+    });
+    if (json.error) throw new Error(json.error);
+    const days = json.days || [];
+    const qlNotes = json.ql_notes || [];
+    monthlyData = normalizeMonthlyData(days);
 
     // Build qlNotesByDate lookup
     qlNotesByDate = {};
-    (qlNotes || []).forEach(n => {
-      const d = n.stat_date;
+    qlNotes.forEach(n => {
+      const d = n.date;
       if (!qlNotesByDate[d]) qlNotesByDate[d] = [];
-      qlNotesByDate[d].push({ leadNumber: n.lead_number, note: n.note });
+      qlNotesByDate[d].push({ leadNumber: n.leadNumber, note: n.note });
     });
     // Sort each day's notes by lead number
     Object.keys(qlNotesByDate).forEach(d => {
@@ -1111,7 +1056,7 @@ function updateTotalCalls() {
    SETTINGS MODAL  (shows current hardcoded URL for reference)
    ════════════════════════════════════════════════════════════════════ */
 function openModal() {
-  scriptInput.value = SUPABASE_URL;
+  scriptInput.value = API_URL;
   modalOverlay.style.display = 'flex';
 }
 function closeModal()   { modalOverlay.style.display = 'none'; }
@@ -1156,15 +1101,5 @@ function escapeHtml(str) {
 /* ════════════════════════════════════════════════════════════════════
    BOOT — resume session if user was previously logged in
    ════════════════════════════════════════════════════════════════════ */
-(async function boot() {
-  const { data: { session } } = await db.auth.getSession();
-  if (!session) return;
-  currentUserId = session.user.id;
-  const { data: profile, error } = await db
-    .from('profiles').select('username').eq('id', currentUserId).single();
-  if (error || !profile) {
-    await db.auth.signOut();
-    return;
-  }
-  onLoginSuccess(profile.username);
-})();
+// Sessions are deliberately not persisted: every user signs in on opening
+// this shared Apps Script web app.

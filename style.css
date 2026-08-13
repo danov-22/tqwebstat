@@ -726,6 +726,8 @@ body {
   border-color: var(--border);
   color: var(--text);
   flex-shrink: 0;
+  font-size: 1.45rem;
+  line-height: 1;
 }
 .btn-undo:hover:not(:disabled) { background: var(--bg); border-color: var(--muted); }
 

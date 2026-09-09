@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TQ Statistics</title>
+  <link rel="icon" type="image/svg+xml" href="https://tqwebstat.vercel.app/tq-favicon.svg">
   <style><?!= include('style'); ?></style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
@@ -107,6 +108,13 @@
       </header>
 
       <div id="notification-panel" class="notification-panel"></div>
+
+      <nav class="app-section-nav" aria-label="Application pages">
+        <button class="active" type="button" data-app-page="overview">Overview</button>
+        <button type="button" data-app-page="activity">Activity</button>
+        <button type="button" data-app-page="leads">Leads</button>
+        <button type="button" data-app-page="input">Input</button>
+      </nav>
 
       <!-- Config banner (hidden when URL is hardcoded) -->
       <div class="config-banner" id="config-banner" role="button" tabindex="0">

@@ -342,6 +342,32 @@ function doLogout() {
 
 document.getElementById('btn-logout').addEventListener('click', doLogout);
 
+const appPageButtons = document.querySelectorAll('[data-app-page]');
+const appPrimaryCards = document.querySelectorAll('.app > .card');
+const appViews = {
+  overview: appPrimaryCards[0],
+  activity: document.getElementById('chart-card'),
+  leads: document.getElementById('daily-perf-card'),
+  input: document.getElementById('stats-grid')
+};
+
+function showAppPage(page) {
+  Object.keys(appViews).forEach(key => {
+    if (appViews[key]) appViews[key].classList.toggle('app-page-active', key === page);
+  });
+  appPageButtons.forEach(button =>
+    button.classList.toggle('active', button.dataset.appPage === page)
+  );
+  if (page === 'activity' && chartInstance) chartInstance.resize();
+  if (page === 'leads') renderDailyPerformance();
+}
+
+appPageButtons.forEach(button => button.addEventListener('click', () => {
+  showAppPage(button.dataset.appPage);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}));
+showAppPage('overview');
+
 
 async function postToScript(payload) {
   return new Promise((resolve, reject) => {

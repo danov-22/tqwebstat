@@ -388,7 +388,7 @@ function doGet() {
     .evaluate()
     .setTitle('TQ Statistics')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setFaviconUrl('https://tqwebstat.vercel.app/tq-favicon.svg')
+    .setFaviconUrl('https://tqwebstat.vercel.app/tq-favicon.png?v=2')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 

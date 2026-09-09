@@ -3,3 +3,20 @@
 @media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:60px}.hero-visual{max-width:650px}.dashboard{grid-template-columns:1fr}.sidebar{display:none}.dash-grid{grid-template-columns:1fr}.section-heading{align-items:flex-start;flex-direction:column}.about{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.site-header nav{display:none}.site-header{padding:0 18px}.hero{padding:55px 18px 85px}.hero h1{font-size:49px}.hero-text{font-size:16px}.hero-actions{align-items:flex-start;flex-direction:column}.trust-line{gap:12px;flex-wrap:wrap}.preview-body{padding:25px}.floating-card{right:-5px;bottom:-25px}.demo-section{padding:80px 10px}.section-heading{padding:0 10px}.section-heading h2,.about h2{font-size:40px}.dashboard-main{padding:16px}.dash-top{align-items:flex-start;gap:15px}.period-tabs{display:flex}.announcement{align-items:flex-start}.metrics{grid-template-columns:1fr 1fr}.panel{padding:14px}.workflow{padding:85px 20px}.steps{grid-template-columns:1fr}.steps article,.steps article+article{border-right:0;border-bottom:1px solid #ccd3cb;padding:28px 0}.about{padding:80px 25px;gap:60px}.about-quote{padding-left:20px}footer{gap:20px;flex-wrap:wrap}.preview-summary{gap:10px}.site-header .small{font-size:11px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal{opacity:1;transform:none;transition:none}}
+
+/* Shared TQ application palette: showcase layout, operational colors. */
+:root{--ink:#e2e8f0;--muted:#8b94a9;--paper:#0f1117;--white:#1a1d27;--green:#3b82f6;--lime:#dbeafe;--line:#2a2d3a;--orange:#8b5cf6;--navy:#11141c}
+body{background:var(--paper);color:var(--ink)}
+.site-header{border-bottom:1px solid var(--line)}
+.brand-mark,.button{background:#3b82f6}.button:hover{background:#2563eb}
+.preview-window{background:#1a1d27;box-shadow:0 35px 80px #0007}.preview-bar{background:#202430}.preview-bar i{background:#3b4152}.preview-kicker,.preview-total small,.preview-summary{color:var(--muted)}.preview-summary{border-color:var(--line)}.preview-summary b{color:var(--ink)}
+.floating-card{background:#202430}.pulse,.live-dot{background:#22c55e;box-shadow:0 0 0 5px #22c55e25}
+.demo-section{background:#13161e}.dashboard{background:#0f1117;box-shadow:0 25px 70px #0008}.sidebar{background:#11141c}.inverse .brand-mark{background:#3b82f6;color:#fff}.side-nav button.active{background:#3b82f61c}.workspace span,.demo-label{color:#727d91}
+.period-tabs{background:#202430}.period-tabs button.active{background:#2a2f3d;color:#fff;box-shadow:0 2px 8px #0004}
+.announcement{background:#3b82f612;border-color:#3b82f642}.announcement>span{background:#3b82f6}
+.metrics article,.panel{background:#1a1d27;border-color:#2a2d3a}.metrics strong{color:#f1f5f9}.metrics small,.panel-title>b,.panel-title button{color:#60a5fa}
+.bars{border-color:#343948}.bar{background:#354156}.bar.current{background:#3b82f6}
+.outcome-grid button{background:#141720;border-color:#303544;color:#9aa4b8}.outcome-grid button:hover{border-color:#3b82f6}.outcome-grid b{color:#f1f5f9}.outcome-grid .qualified{background:#8b5cf618;border-color:#8b5cf650}
+.lead-row{border-color:#2a2d3a}.lead-row em{color:#86efac;background:#22c55e14}.mix-row>div{background:#2a2f3d}.mix-row i{background:#3b82f6}
+.workflow .steps,.steps article{border-color:#2a2d3a}.about{background:#171a24}.about .eyebrow{color:#a78bfa}.about-card>p:not(.eyebrow),.about-quote p{color:#9ca6ba}.about-quote{border-color:#ffffff24}
+footer{color:#737d91}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="TQ Web Stat is a lightweight call and lead activity tracker for focused telemarketing teams.">
+  <meta name="theme-color" content="#0f1117"><title>TQ Web Stat Demo — Sales activity, made visible</title>
+  <link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/demo.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top"><span class="brand-mark">TQ</span><span>Web Stat</span></a>
+    <nav><a href="#product">Product</a><a href="#workflow">Workflow</a><a href="#about">About</a></nav>
+    <a class="button small" href="#demo">Try the demo</a>
+  </header>
+  <main id="top">
+    <section class="hero" id="product">
+      <div class="hero-copy reveal"><p class="eyebrow">A focused sales operations tool</p><h1>Daily activity,<br><em>without the noise.</em></h1><p class="hero-text">TQ Web Stat gives calling teams a quick way to record outcomes, follow lead production, and understand performance from day to month.</p><div class="hero-actions"><a class="button" href="#demo">Explore live demo ↓</a><a class="text-link" href="#about">Project story ↗</a></div><div class="trust-line"><span><strong>Fast</strong> one-tap logging</span><span><strong>Clear</strong> reporting</span><span><strong>Private</strong> workspace data</span></div></div>
+      <div class="hero-visual reveal"><div class="preview-window"><div class="preview-bar"><i></i><i></i><i></i><span>Tuesday overview</span></div><div class="preview-body"><div class="preview-kicker">Today</div><div class="preview-total">128 <small>dials</small></div><svg class="hero-chart" viewBox="0 0 520 190" role="img" aria-label="Activity increasing through the day"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#315c48" stop-opacity=".28"/><stop offset="1" stop-color="#315c48" stop-opacity="0"/></linearGradient></defs><path class="chart-grid" d="M0 35H520M0 90H520M0 145H520"/><path class="chart-area" d="M0 154 C45 148 54 120 95 125 S148 88 190 101 S250 62 289 76 S355 43 396 51 S460 12 520 25 V190 H0Z"/><path class="chart-line" d="M0 154 C45 148 54 120 95 125 S148 88 190 101 S250 62 289 76 S355 43 396 51 S460 12 520 25"/></svg><div class="preview-summary"><span><b>7</b> leads</span><span><b>42</b> conversations</span><span><b>5.5%</b> conversion</span></div></div></div><div class="floating-card"><span class="pulse"></span><div><b>Qualified lead recorded</b><small>Just now · Demo agent</small></div></div></div>
+    </section>
+
+    <section class="demo-section" id="demo">
+      <div class="section-heading reveal"><div><p class="eyebrow">Interactive product demo</p><h2>See the working day<br>at a glance.</h2></div><p>This demonstration uses fictional data. Click an outcome, switch reporting periods, and explore the operational picture a manager receives.</p></div>
+      <div class="dashboard reveal">
+        <aside class="sidebar"><a class="brand inverse" href="#top"><span class="brand-mark">TQ</span><span>Web Stat</span></a><div class="workspace"><span>Workspace</span><b>Northstar Sales</b></div><div class="side-nav"><button class="active">⌁ Overview</button><button>◎ Activity</button><button>◇ Leads</button></div><div class="demo-label">Demo workspace<br><small>All information is fictional</small></div></aside>
+        <div class="dashboard-main">
+          <div class="dash-top"><div><p class="dash-date">Tuesday, September 2</p><h3>Good morning, Alex.</h3></div><div class="period-tabs"><button data-period="day" class="active">Day</button><button data-period="week">Week</button><button data-period="month">Month</button></div></div>
+          <div class="announcement"><span>i</span><p><b>Admin update</b> Campaign briefing starts at 2:30 PM. Remember to tag high-intent prospects.</p><button aria-label="Dismiss">×</button></div>
+          <div class="metrics"><article><span>Total dials</span><strong id="metric-dials">128</strong><small id="trend-dials">↑ 12% vs yesterday</small></article><article><span>Conversations</span><strong id="metric-talks">42</strong><small id="trend-talks">32.8% contact rate</small></article><article><span>Qualified leads</span><strong id="metric-leads">7</strong><small id="trend-leads">↑ 2 vs yesterday</small></article><article><span>Lead rate</span><strong id="metric-rate">5.5%</strong><small id="trend-rate">Target 5.0%</small></article></div>
+          <div class="dash-grid">
+            <article class="panel activity-panel"><div class="panel-title"><div><span>Dial activity</span><small id="chart-subtitle">Today by hour</small></div><b id="chart-total">128 total</b></div><div class="bars" id="activity-chart" aria-label="Dial activity chart"></div></article>
+            <article class="panel quick-log"><div class="panel-title"><div><span>Quick log</span><small>Record a call outcome</small></div><i class="live-dot"></i></div><div class="outcome-grid"><button data-outcome="Voicemail">Voicemail <b id="count-voicemail">46</b></button><button data-outcome="No answer">No answer <b id="count-no-answer">31</b></button><button data-outcome="Conversation">Conversation <b id="count-conversation">42</b></button><button class="qualified" data-outcome="Qualified lead">Qualified lead <b id="count-qualified-lead">7</b></button></div><p class="log-feedback" id="log-feedback" aria-live="polite">Choose an outcome to add a demo entry.</p></article>
+            <article class="panel leads-panel"><div class="panel-title"><div><span>Recent leads</span><small>Latest qualified opportunities</small></div><button>View all</button></div><div class="lead-row"><span class="avatar coral">JM</span><div><b>Jordan Miles</b><small>Home services · Follow up Wed</small></div><em>High intent</em></div><div class="lead-row"><span class="avatar green">SK</span><div><b>Samira Khan</b><small>Insurance · Quote requested</small></div><em>Qualified</em></div><div class="lead-row"><span class="avatar gold">DL</span><div><b>Devon Lee</b><small>SaaS · Decision maker</small></div><em>Callback</em></div></article>
+            <article class="panel mix-panel"><div class="panel-title"><div><span>Outcome mix</span><small>Share of recorded calls</small></div></div><div class="mix-row"><span>Connected</span><div><i style="width:67%"></i></div><b>33%</b></div><div class="mix-row"><span>Voicemail</span><div><i style="width:73%"></i></div><b>36%</b></div><div class="mix-row"><span>No answer</span><div><i style="width:49%"></i></div><b>24%</b></div><div class="mix-row"><span>Qualified</span><div><i style="width:11%"></i></div><b>5.5%</b></div></article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workflow" id="workflow"><div class="section-heading reveal"><div><p class="eyebrow">Designed around the call</p><h2>Less administration.<br>Better information.</h2></div></div><div class="steps"><article class="reveal"><span>01</span><h3>Log in one tap</h3><p>Agents record the result while the conversation is fresh—without breaking their calling rhythm.</p></article><article class="reveal"><span>02</span><h3>Understand the day</h3><p>Live totals translate individual actions into useful daily, weekly, and monthly signals.</p></article><article class="reveal"><span>03</span><h3>Keep teams aligned</h3><p>Admin notices and lead notes keep operational context alongside the numbers.</p></article></div></section>
+    <section class="about" id="about"><div class="about-card reveal"><p class="eyebrow">The project</p><h2>Built from a real operational need.</h2><p>TQ Web Stat began as a practical internal tool for replacing scattered manual tracking with one focused workflow. The application uses Google Apps Script and Sheets, with authentication, activity history, exact undo, lead notes, admin notifications, and responsive reporting.</p><div class="project-tags"><span>Product design</span><span>Front-end</span><span>Apps Script</span><span>Google Sheets</span></div></div><div class="about-quote reveal"><blockquote>“The best internal tools feel obvious: less time managing the system, more time doing the work.”</blockquote><p>Designed and developed as an independent portfolio project.</p></div></section>
+  </main>
+  <footer><a class="brand" href="#top"><span class="brand-mark">TQ</span><span>Web Stat</span></a><p>Interactive portfolio demonstration · No real company data</p><a href="#top">Back to top ↑</a></footer>
+  <script src="/demo.js"></script>
+</body></html>

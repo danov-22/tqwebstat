@@ -111,10 +111,14 @@
 
       <nav class="app-section-nav" aria-label="Application pages">
         <button class="active" type="button" data-app-page="overview">Overview</button>
-        <button type="button" data-app-page="activity">Activity</button>
-        <button type="button" data-app-page="leads">Leads</button>
         <button type="button" data-app-page="input">Input</button>
       </nav>
+
+      <div class="notification-banner" id="notification-banner" hidden>
+        <span class="notification-banner-icon">i</span>
+        <div><strong id="notification-banner-title">Admin update</strong><p id="notification-banner-message"></p></div>
+        <button type="button" id="notification-banner-close" aria-label="Dismiss notification">×</button>
+      </div>
 
       <!-- Config banner (hidden when URL is hardcoded) -->
       <div class="config-banner" id="config-banner" role="button" tabindex="0">

@@ -345,21 +345,20 @@ document.getElementById('btn-logout').addEventListener('click', doLogout);
 const appPageButtons = document.querySelectorAll('[data-app-page]');
 const appPrimaryCards = document.querySelectorAll('.app > .card');
 const appViews = {
-  overview: appPrimaryCards[0],
-  activity: document.getElementById('chart-card'),
-  leads: document.getElementById('daily-perf-card'),
-  input: document.getElementById('stats-grid')
+  overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('daily-perf-card')],
+  input: [document.getElementById('stats-grid')]
 };
+const managedAppViews = [].concat.apply([], Object.keys(appViews).map(key => appViews[key])).filter(Boolean);
 
 function showAppPage(page) {
-  Object.keys(appViews).forEach(key => {
-    if (appViews[key]) appViews[key].classList.toggle('app-page-active', key === page);
-  });
+  managedAppViews.forEach(view => view.classList.toggle('app-page-active', appViews[page].indexOf(view) !== -1));
   appPageButtons.forEach(button =>
     button.classList.toggle('active', button.dataset.appPage === page)
   );
-  if (page === 'activity' && chartInstance) chartInstance.resize();
-  if (page === 'leads') renderDailyPerformance();
+  if (page === 'overview' && chartInstance) chartInstance.resize();
+  if (page === 'overview') renderDailyPerformance();
+  const notificationBanner = document.getElementById('notification-banner');
+  if (notificationBanner) notificationBanner.hidden = page !== 'overview' || notificationBanner.dataset.available !== 'true' || notificationBanner.dataset.dismissed === 'true';
 }
 
 appPageButtons.forEach(button => button.addEventListener('click', () => {
@@ -1030,11 +1029,25 @@ function renderNotifications(list = []) {
   const count =
   document.getElementById('notification-count');
 
+  const banner = document.getElementById('notification-banner');
+  const bannerTitle = document.getElementById('notification-banner-title');
+  const bannerMessage = document.getElementById('notification-banner-message');
+
 
   if (!panel || !count) return;
 
 
   count.textContent = list.length;
+
+  if (banner) {
+    banner.dataset.available = String(Boolean(list.length));
+    banner.hidden = !list.length || !document.querySelector('[data-app-page="overview"]').classList.contains('active');
+    if (list.length) {
+      const latest = list[list.length - 1];
+      bannerTitle.textContent = String(latest.title || 'Admin update');
+      bannerMessage.textContent = String(latest.message || '');
+    }
+  }
 
 
   if (!list.length){
@@ -1164,6 +1177,13 @@ function updateChart() {
 function getDailyDials(day) {
   return CATEGORIES.reduce((s, c) => s + (Number(day[c.key]) || 0), 0);
 }
+
+const notificationBannerClose = document.getElementById('notification-banner-close');
+if (notificationBannerClose) notificationBannerClose.addEventListener('click', () => {
+  const banner = document.getElementById('notification-banner');
+  banner.dataset.dismissed = 'true';
+  banner.hidden = true;
+});
 
 // Monthly legend behavior: select one series instead of merely toggling it.
 // Clicking the already-isolated series restores the full chart.

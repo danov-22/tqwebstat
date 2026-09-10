@@ -204,7 +204,7 @@ body {
 
 .app-section-nav {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 5px;
   padding: 5px;
   background: var(--surface);
@@ -942,7 +942,7 @@ body {
   .ql-panel-left, .ql-panel-right { padding: 1rem; }
   .toast { left: .75rem; right: .75rem; bottom: .75rem; max-width: none; text-align: center; }
   .app-footer { padding: 1rem .25rem; }
-  .app-section-nav { grid-template-columns: repeat(4, max-content); overflow-x: auto; justify-content: start; scrollbar-width: none; }
+  .app-section-nav { grid-template-columns: repeat(2, 1fr); overflow: visible; }
   .app-section-nav::-webkit-scrollbar { display: none; }
   .app-section-nav button { min-width: 78px; padding: .65rem .8rem; }
   .ball-menu { position: fixed; right: .65rem; bottom: 4.5rem; width: min(210px, calc(100vw - 1.3rem)); }
@@ -950,7 +950,16 @@ body {
 
 .notification-btn {
   position: relative;
+  display: none;
 }
+
+.notification-banner { display: flex; align-items: center; gap: .75rem; padding: .8rem 1rem; background: var(--accent-bg); border: 1px solid rgba(59,130,246,.3); border-radius: 10px; }
+.notification-banner[hidden] { display: none; }
+.notification-banner-icon { display: grid; place-items: center; flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; }
+.notification-banner > div { flex: 1; min-width: 0; }
+.notification-banner strong { display: block; color: var(--text); font-size: .76rem; }
+.notification-banner p { margin-top: .15rem; color: var(--muted); font-size: .72rem; line-height: 1.45; }
+.notification-banner > button { border: 0; background: transparent; color: var(--muted); font-size: 1rem; cursor: pointer; }
 
 
 #notification-count {

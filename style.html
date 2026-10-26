@@ -1045,4 +1045,26 @@ body {
 .calendar-day:hover,.calendar-day:focus-visible { border-color:var(--accent); }
 .calendar-hint { font-size:.8rem;opacity:.7; }
 @media(max-width:560px){.lead-calendar{gap:4px}.calendar-day{min-height:65px;padding:5px}.calendar-day strong{font-size:1.1rem}}
+
+/* Distinct export action, visible in both light and dark themes. */
+#download-report {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .25);
+}
+#download-report:hover:not(:disabled) {
+  background: #6d28d9;
+  border-color: #6d28d9;
+}
+#download-report:focus-visible {
+  outline: 3px solid #a78bfa;
+  outline-offset: 3px;
+}
+#download-report:disabled {
+  opacity: .6;
+  cursor: wait;
+  box-shadow: none;
+}
 </style>

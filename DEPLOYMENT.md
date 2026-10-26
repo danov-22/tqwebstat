@@ -26,3 +26,7 @@ Run `node verify-features.cjs` for mocked backend checks covering cleanup, alloc
 Replace the Apps Script backend with the updated [code.gs](./code.gs). The custom favicon now uses the direct PNG URL without a query suffix. Its `setFaviconUrl(...)` call is guarded so an icon validation failure cannot prevent the app from opening. The HTML icon link uses the same direct URL.
 
 Save, then Deploy > Manage deployments > Edit (pencil) > New version > Deploy. Reload the existing web app URL. Updating code without deploying a new version does not update the live app. If the old tab icon remains cached, close the tab and reopen the web app.
+
+## PDF browser headers
+
+The report requests zero page margins to suppress browser-generated headers and addresses, with internal padding for the report content. If the print preview still shows `about:blank`, disable **Headers and footers** under **More settings** in the browser print dialog. That browser preference cannot be forcibly changed by page JavaScript. The report title (and suggested PDF filename) is now `Monthly Report, September` for a September export.

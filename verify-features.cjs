@@ -37,3 +37,12 @@ const report = ui.monthlyReportHTML('2026-10','Alice',{days:[{date:'2026-10-03',
 assert.ok(report.includes('Monthly total')); assert.ok(report.includes('日本語')); assert.ok(report.includes('&lt;script&gt;')); assert.ok(!report.includes('<script>bad')); assert.ok(!report.includes('excluded note')); assert.ok(!report.includes('2026-09-03'));
 assert.ok(ui.monthlyReportHTML('2026-10','Alice',{}).includes('No lead notes recorded'));
 console.log('Passed: leap-year calendars, monthly lead counts, PDF report month filtering, escaped notes, international text, empty reports.');
+
+const renamedReport = ui.monthlyReportHTML('2026-09','trevor lee',{});
+assert.ok(renamedReport.includes('<title>Monthly Report, September</title>'));
+assert.ok(renamedReport.includes('<h1>TQ Web Stat - Monthly report</h1>'));
+assert.ok(renamedReport.includes('<p>Trevor Lee</p>'));
+assert.ok(renamedReport.includes('<h2>Qualified Lead Notes</h2>'));
+assert.ok(renamedReport.includes('Qualified leads -- VM:'));
+assert.ok(renamedReport.includes('@page{size:A4 landscape;margin:0}'));
+console.log('Passed: PDF title, user capitalization, report headings, ASCII separators, and print margins.');

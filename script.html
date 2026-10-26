@@ -1608,7 +1608,7 @@ function monthlyReportHTML(month, user, data) {
     </tbody><tfoot><tr>${cells(['Monthly total',...totals])}</tr></tfoot></table>
     <p class="muted">QL: Qualified leads -- VM: Voicemail -- SNR: Silence / No response -- NI: Not interested -- HU: Hung up -- DNC: Do not call -- OOO: Out of office -- LB: Language barrier -- FE: FE category -- WN: Wrong number -- FP: Full pitch -- MP: Money part</p>
     <h2>Qualified Lead Notes</h2><table><thead><tr><th>Date</th><th>Lead</th><th>Notes</th></tr></thead><tbody>
-    ${notes.length ? notes.map(note => '<tr>' + cells([note.date,note.leadNumber]) + '<td class="note">' + escapeHtml(note.note || '?') + '</td></tr>').join('') : '<tr><td colspan="3">No lead notes recorded for this month.</td></tr>'}
+    ${notes.length ? notes.map(note => '<tr>' + cells([note.date,note.leadNumber]) + '<td class="note">' + escapeHtml(note.note || 'No note added') + '</td></tr>').join('') : '<tr><td colspan="3">No lead notes recorded for this month.</td></tr>'}
     </tbody></table><p class="muted">Generated ${escapeHtml(new Date().toLocaleString())}</p></body></html>`;
 }
 async function exportMonthlyPDF(button) {

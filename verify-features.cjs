@@ -46,3 +46,10 @@ assert.ok(renamedReport.includes('<h2>Qualified Lead Notes</h2>'));
 assert.ok(renamedReport.includes('Qualified leads -- VM:'));
 assert.ok(renamedReport.includes('@page{size:A4 landscape;margin:0}'));
 console.log('Passed: PDF title, user capitalization, report headings, ASCII separators, and print margins.');
+
+const blankNoteReport = ui.monthlyReportHTML('2026-09', 'sample user', {
+  ql_notes: [{date:'2026-09-02', leadNumber:1, note:''}]
+});
+assert.ok(blankNoteReport.includes('<td class="note">No note added</td>'));
+assert.ok(!blankNoteReport.includes('<td class="note">?</td>'));
+console.log('Passed: empty lead notes export as readable text instead of a question mark.');

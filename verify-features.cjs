@@ -53,3 +53,48 @@ const blankNoteReport = ui.monthlyReportHTML('2026-09', 'sample user', {
 assert.ok(blankNoteReport.includes('<td class="note">No note added</td>'));
 assert.ok(!blankNoteReport.includes('<td class="note">?</td>'));
 console.log('Passed: empty lead notes export as readable text instead of a question mark.');
+// Chat authorization and lifecycle checks run against isolated sheet/cache mocks.
+const chatData = [], cache = new Map();
+let uuidCounter = 0;
+const chatSheet = {
+ getLastRow:()=>chatData.length+1, getMaxRows:()=>10000,
+ getRange:(r,c,n,w)=>({
+   getValues:()=>chatData.slice(r-2,r-2+n).map(row=>row.slice(c-1,c-1+w)),
+   setValues:values=>values.forEach((row,i)=>chatData[r-2+i]=row.slice()),
+   setRichTextValue:value=>chatData[r-2][c-1]=value
+ }), deleteRow:r=>chatData.splice(r-2,1), deleteRows:(r,n)=>chatData.splice(r-2,n)
+};
+const chatContext = {console,Date,Number,JSON,String,CacheService:{getScriptCache:()=>({put:(k,v)=>cache.set(k,v),get:k=>cache.get(k),remove:k=>cache.delete(k)})},
+ Utilities:{getUuid:()=>('00000000-0000-4000-8000-'+String(++uuidCounter).padStart(12,'0'))},
+ LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
+ SpreadsheetApp:{getActiveSpreadsheet:()=>({getSheetByName:name=> name==='Users'?{getLastRow:()=>4,getRange:()=>({getValues:()=>[['alice'],['bob'],['eve']]})}:chatSheet}),
+ newRichTextValue:()=>({setText:value=>({build:()=>value})}),flush(){}}};
+vm.createContext(chatContext); vm.runInContext(source,chatContext); chatContext.jsonResponse=x=>x;
+const aliceToken=chatContext.createChatSession_('Alice'), bobToken=chatContext.createChatSession_('Bob'), eveToken=chatContext.createChatSession_('Eve');
+const request = (token, action, fields={})=>chatContext.chatRequest_({token,action,...fields});
+request(aliceToken,'chatSend',{requestId:'public-message-0001',text:'Hello everyone',username:'eve'});
+request(aliceToken,'chatSend',{requestId:'private-message-001',peer:'bob',text:'=literal private text'});
+assert.equal(chatData[0][1],'alice'); // A spoofed username has no effect.
+assert.equal(chatData[1][3],'=literal private text');
+assert.equal(request(eveToken,'chatList').messages.length,1);
+assert.equal(request(bobToken,'chatList',{peer:'alice'}).messages[0].text,'=literal private text');
+assert.equal(request(eveToken,'chatList',{peer:'alice'}).messages.length,0);
+assert.equal(request(eveToken,'chatList',{peer:'bob'}).messages.length,0);
+assert.match(request(bobToken,'chatRecall',{id:'public-message-0001'}).error,/own messages/);
+request(aliceToken,'chatSend',{requestId:'private-message-001',peer:'bob',text:'retry'});
+assert.equal(chatData.length,2); // Retry does not duplicate.
+assert.match(request(aliceToken,'chatSend',{requestId:'invalid-target-0001',peer:'unknown',text:'hello'}).error,/registered/);
+assert.match(request(aliceToken,'chatSend',{requestId:'too-long-message-01',text:'x'.repeat(4001)}).error,/4,000/);
+assert.throws(()=>request('forged','chatList'),/CHAT_AUTH/);
+chatData[1][5]=Date.now()-1;
+assert.equal(request(bobToken,'chatList',{peer:'alice'}).messages.length,0);
+chatContext.cleanupExpiredChat(); assert.equal(chatData.length,1);
+request(aliceToken,'chatRecall',{id:'public-message-0001'}); assert.equal(chatData.length,0);
+for(let i=0;i<205;i++)chatData.push(['page-'+i,'alice','','Message '+i,Date.now(),Date.now()+604800000]);
+const latest = request(bobToken,'chatList'); assert.equal(latest.messages.length,100);assert.equal(latest.hasMore,true);
+const earlier = request(bobToken,'chatList',{before:latest.messages[0].id}); assert.equal(earlier.messages.length,100);
+assert.equal(request(bobToken,'chatList',{start:earlier.messages[0].id}).messages.length,200);
+request(aliceToken,'chatLogout'); assert.throws(()=>request(aliceToken,'chatList'),/CHAT_AUTH/);
+cache.set('chat-session:'+eveToken,JSON.stringify({user:'eve',expires:Date.now()-1}));
+assert.throws(()=>request(eveToken,'chatList'),/CHAT_AUTH/);
+console.log('Passed: verified chat identity, private isolation, author-only recall, idempotent sends, validation, seven-day expiry, cleanup, pagination, session expiry and logout.');

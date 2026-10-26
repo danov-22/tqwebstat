@@ -27,6 +27,14 @@ const CATEGORIES = [
 
 /* ── App state ───────────────────────────────────────────────────── */
 let currentUser       = null;
+let chatToken = '';
+let chatPeer = '';
+let chatTimer = null;
+let chatVersion = 0;
+let chatLoadingVersion = -1;
+let chatMessages = [];
+let chatHasMore = false;
+let chatActive = false;
 let selectedMonth     = '';
 let monthlyData       = [];   // [{date, ql, vm, snr, ...}, ...]
 let qlNotesByDate     = {};   // {'YYYY-MM-DD': [{leadNumber, note}, ...]}
@@ -276,6 +284,7 @@ async function handleLogin(e) {
   try {
     const res = await postToScript({ action: 'login', username, password });
     if (res.error) { showAuthError(res.error); return; }
+    chatToken = res.chatToken || '';
     onLoginSuccess(res.username);
   } catch (err) {
     console.error('LOGIN ERROR:', err);
@@ -297,6 +306,7 @@ async function handleRegister(e) {
   try {
     const res = await postToScript({ action: 'register', username, password });
     if (res.error) { showAuthError(res.error); return; }
+    chatToken = res.chatToken || '';
     onLoginSuccess(res.username);
   } catch { showAuthError('Could not reach the Apps Script. Check your URL in script.js.'); }
   finally { btn.disabled = false; btn.textContent = 'Create Account'; }
@@ -323,10 +333,19 @@ function onLoginSuccess(username) {
   document.getElementById('user-greeting').textContent = formatUsername(username);
 
   loadPersonalNotes();
+  showAppPage('overview');
   initApp();
 }
 
 function doLogout() {
+  if (chatToken) postToScript({action:'chatLogout', token:chatToken}).catch(() => {});
+  chatToken = '';
+  stopChat();
+  chatPeer = ''; chatMessages = [];
+  document.getElementById('chat-messages').replaceChildren();
+  document.getElementById('chat-partners').replaceChildren();
+  document.getElementById('chat-peer').innerHTML = '<option value="">Choose a user</option>';
+  document.getElementById('chat-text').value = '';
   document.getElementById('personal-notes').value = '';
   currentUser = null;
   localStorage.removeItem('tq_user');
@@ -349,11 +368,14 @@ const appPrimaryCards = document.querySelectorAll('.app > .card');
 const appViews = {
   overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('daily-perf-card'), document.getElementById('lead-calendar-card')],
   input: [document.getElementById('input-performance-card'), document.getElementById('stats-grid')],
-  notes: [document.getElementById('personal-notes-card')]
+  notes: [document.getElementById('personal-notes-card')],
+  chat: [document.getElementById('chat-card')]
 };
 const managedAppViews = [].concat.apply([], Object.keys(appViews).map(key => appViews[key])).filter(Boolean);
 
 function showAppPage(page) {
+  stopChat();
+  if (page === 'chat') startChat();
   managedAppViews.forEach(view => view.classList.toggle('app-page-active', appViews[page].indexOf(view) !== -1));
   appPageButtons.forEach(button =>
     button.classList.toggle('active', button.dataset.appPage === page)
@@ -1633,4 +1655,125 @@ async function exportMonthlyPDF(button) {
   finally { button.disabled = false; }
 }
 document.getElementById('download-report').addEventListener('click', event => exportMonthlyPDF(event.currentTarget));
+
+function stopChat() {
+  chatActive = false;
+  chatVersion++;
+  clearInterval(chatTimer);
+  chatTimer = null;
+}
+function startChat() {
+  chatActive = true;
+  refreshChat();
+  chatTimer = setInterval(() => {
+    if (!document.hidden) refreshChat();
+  }, 10000);
+}
+function switchChat(peer) {
+  chatPeer = peer;
+  chatVersion++;
+  chatMessages = [];
+  chatHasMore = false;
+  document.getElementById('chat-text').value = '';
+  document.getElementById('chat-title').textContent = peer ? 'Private: ' + formatUsername(peer) : 'Everyone';
+  document.querySelector('.chat-compose-label').textContent = peer ? 'Message ' + formatUsername(peer) + ' privately' : 'Message everyone';
+  document.getElementById('chat-peer').value = peer;
+  renderChatMessages();
+  refreshChat();
+}
+function renderChatMessages() {
+  const list = document.getElementById('chat-messages');
+  const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 100;
+  const now = Date.now();
+  chatMessages = chatMessages.filter(message => message.expiresAt > now);
+  const markup = chatMessages.length ? chatMessages.map(message => {
+    const own = message.sender === currentUser.toLowerCase().trim();
+    return `<article class="chat-message ${own ? 'chat-own' : ''}">
+      <div class="chat-message-header"><strong>${escapeHtml(formatUsername(message.sender))}</strong>
+      <time datetime="${new Date(message.createdAt).toISOString()}" title="Expires ${escapeHtml(new Date(message.expiresAt).toLocaleString())}">${escapeHtml(new Date(message.createdAt).toLocaleString())}</time></div>
+      <p>${escapeHtml(message.text)}</p><div class="chat-message-actions">${own
+        ? `<button type="button" data-chat-recall="${escapeHtml(message.id)}">Recall</button>`
+        : `<button type="button" data-chat-private="${escapeHtml(message.sender)}">Message privately</button>`}</div></article>`;
+  }).join('') : '<p class="chat-empty">No messages yet. Start the conversation.</p>';
+  if (list.innerHTML !== markup) { list.innerHTML = markup; if (nearBottom) list.scrollTop = list.scrollHeight; }
+  document.getElementById('chat-older').hidden = !chatHasMore;
+}
+async function refreshChat(older = false) {
+  if (!chatActive || !currentUser || chatLoadingVersion === chatVersion) return;
+  if (!chatToken) {
+    document.getElementById('chat-status').textContent = 'Sign out and sign in again to enable chat.';
+    return;
+  }
+  const version = chatVersion;
+  chatLoadingVersion = version;
+  renderChatMessages();
+  try {
+    const result = await postToScript({action:'chatList', token:chatToken, peer:chatPeer,
+      before:older && chatMessages.length ? chatMessages[0].id : '',
+      start:!older && chatMessages.length > 100 ? chatMessages[0].id : ''});
+    if (version !== chatVersion || !chatActive) return;
+    if (older) {
+      const known = new Set(chatMessages.map(message => message.id));
+      chatMessages = [...result.messages.filter(message => !known.has(message.id)), ...chatMessages];
+    } else {
+      // A refresh replaces the visible window so recalled messages disappear too.
+      chatMessages = result.messages;
+    }
+    chatHasMore = result.hasMore;
+    renderChatMessages();
+    const select = document.getElementById('chat-peer');
+    select.innerHTML = '<option value="">Choose a user</option>' + result.users.map(user =>
+      `<option value="${escapeHtml(user)}">${escapeHtml(formatUsername(user))}</option>`).join('');
+    select.value = chatPeer;
+    document.getElementById('chat-partners').innerHTML = result.partners.map(user =>
+      `<button type="button" class="chat-room-button" data-chat-private="${escapeHtml(user)}">${escapeHtml(formatUsername(user))}</button>`).join('');
+    document.getElementById('chat-status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (error) {
+    if (version !== chatVersion) return;
+    document.getElementById('chat-status').textContent = error.message || 'Connection failed. Retrying...';
+    if (String(error.message).includes('CHAT_AUTH')) { clearInterval(chatTimer); chatToken = ''; }
+  } finally { if (chatLoadingVersion === version) chatLoadingVersion = -1; }
+}
+document.getElementById('chat-public').addEventListener('click', () => switchChat(''));
+document.getElementById('chat-peer').addEventListener('change', event => { if (event.target.value) switchChat(event.target.value); });
+document.getElementById('chat-older').addEventListener('click', () => refreshChat(true));
+document.getElementById('chat-card').addEventListener('click', async event => {
+  const privateButton = event.target.closest('[data-chat-private]');
+  if (privateButton) { switchChat(privateButton.dataset.chatPrivate); return; }
+  const recall = event.target.closest('[data-chat-recall]');
+  if (!recall || !confirm('Recall this message for everyone in this conversation?')) return;
+  recall.disabled = true;
+  const version = chatVersion;
+  try {
+    await postToScript({action:'chatRecall', token:chatToken, id:recall.dataset.chatRecall});
+    if (version === chatVersion) {
+      chatMessages = chatMessages.filter(message => message.id !== recall.dataset.chatRecall);
+      renderChatMessages();
+    }
+  } catch (error) { showToast(error.message || 'Could not recall message', 'error'); }
+  finally { recall.disabled = false; }
+});
+document.getElementById('chat-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const textField = document.getElementById('chat-text');
+  const text = textField.value.trim();
+  const button = document.getElementById('chat-send');
+  if (!text || button.disabled) return;
+  const version = chatVersion;
+  const requestId = crypto.randomUUID();
+  button.disabled = true;
+  try {
+    await postToScript({action:'chatSend', token:chatToken, peer:chatPeer, text, requestId});
+    if (version === chatVersion) {
+      if (textField.value.trim() === text) textField.value = '';
+      document.getElementById('chat-status').textContent = 'Message sent';
+      // Invalidate an older poll before asking for the newly saved message.
+      chatVersion++;
+      await refreshChat();
+    }
+  } catch (error) { showToast(error.message || 'Message could not be sent. Your draft is kept.', 'error'); }
+  finally { button.disabled = false; }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && chatActive) refreshChat(); });
+
 </script>

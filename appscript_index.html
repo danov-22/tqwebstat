@@ -113,6 +113,7 @@
         <button class="active" type="button" data-app-page="overview">Overview</button>
         <button type="button" data-app-page="input">Input</button>
         <button type="button" data-app-page="notes">Notes</button>
+        <button type="button" data-app-page="chat">Chat</button>
       </nav>
 
       <div class="notification-banner" id="notification-banner" hidden>
@@ -232,6 +233,27 @@
       </section>
 
       <!-- Stat buttons grid (built by JS) -->
+      <section class="card" id="chat-card">
+        <div class="chart-header"><h2 class="section-title" id="chat-title">Everyone</h2><span id="chat-status" role="status">Open chat to connect</span></div>
+        <p class="chat-service-note">Messages disappear after 7 days. You can recall your own messages at any time. Private conversations are visible in the app only to the two participants; spreadsheet owners can access stored messages.</p>
+        <div class="chat-layout">
+          <aside class="chat-sidebar" aria-label="Conversations">
+            <button type="button" class="chat-room-button" id="chat-public">Everyone - open room</button>
+            <label for="chat-peer">Start a private conversation</label>
+            <select id="chat-peer"><option value="">Choose a user</option></select>
+            <div id="chat-partners"></div>
+          </aside>
+          <div class="chat-main">
+            <button type="button" class="sync-btn" id="chat-older" hidden>Load earlier messages</button>
+            <div class="chat-messages" id="chat-messages" aria-label="Messages" aria-live="polite"></div>
+            <form id="chat-form">
+              <label class="chat-compose-label" for="chat-text">Message everyone</label>
+              <textarea id="chat-text" rows="3" maxlength="4000" placeholder="Write a message..." required></textarea>
+              <div class="chat-compose-actions"><small>Refreshes every 10 seconds while this tab is open.</small><button type="submit" class="chat-send" id="chat-send">Send message</button></div>
+            </form>
+          </div>
+        </div>
+      </section>
       <section class="card" id="personal-notes-card">
         <h2 class="section-title"><label for="personal-notes">Personal notes</label></h2>
         <p>Keep ongoing notes here. Saved automatically on this device and browser for your username. Clearing browser data removes these notes.</p>

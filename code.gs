@@ -426,6 +426,7 @@ function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
     var action = body.action;
+    if (['chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
     if (action === 'editQLNote') return editQLNote_(body);
 
     // ── Register ─────────────────────────────────────────────────
@@ -458,7 +459,7 @@ function doPost(e) {
 
       usersSheet.appendRow([username, hashPassword(password), password, new Date().toISOString()]);
       SpreadsheetApp.flush();
-      return jsonResponse({ success: true, username: username });
+      return jsonResponse({ success: true, username: username, chatToken: createChatSession_(username) });
     }
 
     // ── Undo latest QL atomically ────────────────────────────────
@@ -812,7 +813,8 @@ if (action === 'login') {
 
       return jsonResponse({
         success: true,
-        username: rows[i][0]
+        username: rows[i][0],
+        chatToken: createChatSession_(rows[i][0])
       });
 
     }
@@ -1250,5 +1252,135 @@ function cleanupStatHistory() {
     if (sheet.getMaxRows() > used) sheet.deleteRows(used + 1, sheet.getMaxRows() - used);
     console.log('Stat_History: removed ' + removed + ' old undo entries; kept today.');
     return {removed: removed};
+  } finally { lock.releaseLock(); }
+}
+
+
+// Chat identity comes only from a random server-issued session, never body.username.
+// Cache eviction or six hours without reauthentication requires signing in again.
+function createChatSession_(username) {
+  var token = Utilities.getUuid() + Utilities.getUuid();
+  CacheService.getScriptCache().put('chat-session:' + token,
+    JSON.stringify({user: String(username).trim().toLowerCase(), expires: Date.now() + 21600000}), 21600);
+  return token;
+}
+function chatUser_(token) {
+  if (typeof token !== 'string' || token.length > 100) throw new Error('CHAT_AUTH: Sign out and sign in again to use chat.');
+  var raw = CacheService.getScriptCache().get('chat-session:' + token);
+  var session = raw ? JSON.parse(raw) : null;
+  if (!session || session.expires <= Date.now()) throw new Error('CHAT_AUTH: Sign out and sign in again to use chat.');
+  return session.user;
+}
+function chatSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Chat_Messages');
+  if (!sheet) {
+    sheet = ss.insertSheet('Chat_Messages');
+    sheet.appendRow(['ID', 'Sender', 'Recipient', 'Text', 'CreatedAt', 'ExpiresAt']);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+function chatRows_(sheet) {
+  return sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues() : [];
+}
+function chatVisible_(row, user, peer, now) {
+  if (Number(row[5]) <= now) return false;
+  var sender = String(row[1]), recipient = String(row[2] || '');
+  return peer ? ((sender === user && recipient === peer) || (sender === peer && recipient === user)) : recipient === '';
+}
+function chatRequest_(body) {
+  var user = chatUser_(body.token);
+  if (body.action === 'chatLogout') {
+    CacheService.getScriptCache().remove('chat-session:' + body.token);
+    return jsonResponse({success: true});
+  }
+  var peer = String(body.peer || '').trim().toLowerCase();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var now = Date.now();
+    var sheet = chatSheet_();
+    var rows = chatRows_(sheet);
+    if (body.action === 'chatRecall') {
+      var id = String(body.id || '');
+      for (var i = 0; i < rows.length; i++) {
+        if (String(rows[i][0]) === id) {
+          if (String(rows[i][1]) !== user) return jsonResponse({error: 'You can only recall your own messages.'});
+          sheet.deleteRow(i + 2);
+          SpreadsheetApp.flush();
+          return jsonResponse({success: true});
+        }
+      }
+      return jsonResponse({success: true}); // Already expired or recalled.
+    }
+    var usersSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET);
+    var users = usersSheet && usersSheet.getLastRow() > 1 ? usersSheet.getRange(2, 1, usersSheet.getLastRow() - 1, 1)
+      .getValues().map(function(row) { return String(row[0]).trim().toLowerCase(); }) : [];
+    if (peer && (peer === user || users.indexOf(peer) === -1)) return jsonResponse({error: 'Choose another registered user.'});
+    if (body.action === 'chatSend') {
+      var text = String(body.text || '').trim();
+      if (!text || text.length > 4000) return jsonResponse({error: 'Write a message between 1 and 4,000 characters.'});
+      // Protect against retries/double-clicks without duplicating a message.
+      var requestId = String(body.requestId || '');
+      if (!/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return jsonResponse({error: 'Invalid message request.'});
+      if (rows.some(function(row) { return String(row[0]) === requestId && String(row[1]) === user; })) return jsonResponse({success: true});
+      var recent = rows.filter(function(row) { return String(row[1]) === user && Number(row[4]) > now - 60000; }).length;
+      if (recent >= 20) return jsonResponse({error: 'Please wait a moment before sending more messages.'});
+      var nextRow = sheet.getLastRow() + 1;
+      if (nextRow > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), 100);
+      sheet.getRange(nextRow, 1, 1, 6).setValues([[requestId, '', '', '', now, now + 604800000]]);
+      // All user-supplied text is stored literally, never as spreadsheet formulas.
+      [user, peer, text].forEach(function(value, index) {
+        sheet.getRange(nextRow, index + 2).setRichTextValue(SpreadsheetApp.newRichTextValue().setText(value).build());
+      });
+      SpreadsheetApp.flush();
+      return jsonResponse({success: true});
+    }
+    var visible = rows.filter(function(row) { return chatVisible_(row, user, peer, now); });
+    var before = String(body.before || '');
+    if (before) {
+      var boundary = visible.findIndex(function(row) { return String(row[0]) === before; });
+      if (boundary >= 0) visible = visible.slice(0, boundary);
+    }
+    var hasMore = visible.length > 100;
+    var windowRows = visible.slice(-100);
+    // Preserve earlier pages already loaded while polling for recalls/new messages.
+    var start = String(body.start || '');
+    if (!before && start) {
+      var startIndex = visible.findIndex(function(row) { return String(row[0]) === start; });
+      if (startIndex >= 0) { windowRows = visible.slice(startIndex); hasMore = startIndex > 0; }
+    }
+    var messages = windowRows.map(function(row) {
+      return {id: String(row[0]), sender: String(row[1]), text: String(row[3]), createdAt: Number(row[4]), expiresAt: Number(row[5])};
+    });
+    // Reveal only the current user's own private conversation partners.
+    var partners = {};
+    rows.forEach(function(row) {
+      if (Number(row[5]) <= now || !row[2]) return;
+      if (String(row[1]) === user) partners[String(row[2])] = true;
+      if (String(row[2]) === user) partners[String(row[1])] = true;
+    });
+    return jsonResponse({messages: messages, hasMore: hasMore, users: users.filter(function(name) { return name !== user; }), partners: Object.keys(partners)});
+  } finally { lock.releaseLock(); }
+}
+
+// Run once in the Apps Script editor after deployment.
+function setupChatMaintenance() {
+  if (!ScriptApp.getProjectTriggers().some(function(t) { return t.getHandlerFunction() === 'cleanupExpiredChat'; }))
+    ScriptApp.newTrigger('cleanupExpiredChat').timeBased().everyHours(1).create();
+  return cleanupExpiredChat();
+}
+function cleanupExpiredChat() {
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Chat_Messages');
+    if (!sheet) return;
+    var rows = chatRows_(sheet), end = -1, now = Date.now();
+    for (var i = rows.length - 1; i >= -1; i--) {
+      var expired = i >= 0 && Number(rows[i][5]) <= now;
+      if (expired && end === -1) end = i;
+      if (!expired && end !== -1) { sheet.deleteRows(i + 3, end - i); end = -1; }
+    }
   } finally { lock.releaseLock(); }
 }

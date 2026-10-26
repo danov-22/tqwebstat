@@ -30,3 +30,18 @@ Save, then Deploy > Manage deployments > Edit (pencil) > New version > Deploy. R
 ## PDF browser headers
 
 The report requests zero page margins to suppress browser-generated headers and addresses, with internal padding for the report content. If the print preview still shows `about:blank`, disable **Headers and footers** under **More settings** in the browser print dialog. That browser preference cannot be forcibly changed by page JavaScript. The report title (and suggested PDF filename) is now `Monthly Report, September` for a September export.
+
+## Shared room and private chat
+
+1. Update the backend with [code.gs](./code.gs) and the Apps Script HTML files `index`, `script`, and `style` with [appscript_index.html](./appscript_index.html), [script.html](./script.html), and [style.html](./style.html).
+2. Save and deploy a new version. Sign out and sign in again to obtain a server-verified chat session.
+3. Run `setupChatMaintenance` once in the Apps Script editor and authorize its hourly trigger. It also performs an initial cleanup. Re-running setup does not duplicate the trigger. `Chat_Messages` is created automatically on first chat access.
+4. Verify with two accounts: send to Everyone, start a private conversation via a sender's **Message privately** button or the user selector, and recall a message. A third account must not see either side of the private conversation.
+
+The Everyone room is visible to every registered app user. Private chat is limited by the server to its two participants; spreadsheet owners still have access to the stored rows. No encryption beyond the platform transport/storage is added. User names are shown; the directory lists registered users, not online presence.
+
+Messages are hidden exactly seven days after sending. The hourly trigger deletes expired rows from `Chat_Messages` afterward. Recall immediately deletes the sender's message row; other viewers see the removal on their next refresh. Polling happens every 10 seconds while Chat is selected and the browser document is visible. Earlier messages can be loaded in batches of 100. Switching conversations clears the composer draft.
+
+Chat sessions are issued only after successful login/registration, stored in server cache, and held only in the open page's memory. They last at most six hours and can expire earlier if Google evicts the cache entry; users then sign out and sign in again. Signing out revokes the session. Invalid tokens and attempts to recall someone else's messages are rejected. Text is limited to 4,000 characters and stored literally to avoid spreadsheet formula execution. Each user can send up to 20 messages per minute.
+
+Automated mocked checks cover sender spoofing, private-message isolation, recall ownership, deduplicated sends, invalid recipients, message size, seven-day expiry, physical cleanup, pagination, session expiry, and logout. A live multi-account browser check remains necessary after deployment.

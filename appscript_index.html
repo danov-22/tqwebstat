@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TQ Statistics</title>
-  <link rel="icon" type="image/png" href="https://tqwebstat.vercel.app/tq-favicon.png?v=2">
+  <link rel="icon" type="image/png" href="https://tqwebstat.vercel.app/tq-favicon.png">
   <style><?!= include('style'); ?></style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
@@ -112,6 +112,7 @@
       <nav class="app-section-nav" aria-label="Application pages">
         <button class="active" type="button" data-app-page="overview">Overview</button>
         <button type="button" data-app-page="input">Input</button>
+        <button type="button" data-app-page="notes">Notes</button>
       </nav>
 
       <div class="notification-banner" id="notification-banner" hidden>
@@ -167,6 +168,7 @@
           <h2 class="section-title">Monthly Overview</h2>
           <div class="chart-actions">
             <button class="sync-btn" id="syncButton">↻ Sync</button>
+            <button type="button" class="sync-btn" id="download-report">Export monthly PDF</button>
             <select class="month-select" id="month-select" aria-label="Select month"></select>
           </div>
         </div>
@@ -175,6 +177,13 @@
         <div id="chart-wrap"    style="display:none;">
           <canvas id="monthly-chart" height="300"></canvas>
         </div>
+      </section>
+
+      <section class="card" id="lead-calendar-card">
+        <div class="chart-header"><h2 class="section-title">Qualified leads calendar</h2><span id="calendar-month-total"></span></div>
+        <p id="calendar-month-label"></p>
+        <div id="lead-calendar" class="lead-calendar" aria-label="Monthly qualified leads"></div>
+        <p class="calendar-hint">Select a day to see its performance and lead notes below.</p>
       </section>
 
       <!-- Daily Performance — hover reveals trend chart, always shows QL notes -->
@@ -223,6 +232,20 @@
       </section>
 
       <!-- Stat buttons grid (built by JS) -->
+      <section class="card" id="personal-notes-card">
+        <h2 class="section-title"><label for="personal-notes">Personal notes</label></h2>
+        <p>Keep ongoing notes here. Saved automatically on this device and browser for your username. Clearing browser data removes these notes.</p>
+        <textarea id="personal-notes" rows="16" placeholder="Start writing..."></textarea>
+        <p id="notes-save-status" role="status"></p>
+      </section>
+      <section class="card" id="input-performance-card">
+        <div class="chart-header"><h2 class="section-title">Today's performance</h2><span id="input-performance-date"></span></div>
+        <div class="daily-summary" aria-live="polite">
+          <div><div class="daily-label">Full Pitch</div><div class="daily-number" id="input-fp">0</div></div>
+          <div><div class="daily-label">Money Part</div><div class="daily-number" id="input-mp">0</div></div>
+          <div><div class="daily-label">Qualified Leads</div><div class="daily-number" id="input-ql">0</div></div>
+        </div>
+      </section>
       <section class="stats-grid" id="stats-grid"></section>
 
       <footer class="app-footer">

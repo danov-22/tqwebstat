@@ -1,10 +1,107 @@
-const periods={day:{dials:128,talks:42,leads:7,rate:'5.5%',subtitle:'Today by hour',labels:['8','9','10','11','12','1','2','3','4'],values:[6,12,18,16,8,14,19,21,14],trends:['↑ 12% vs yesterday','32.8% contact rate','↑ 2 vs yesterday','Target 5.0%']},week:{dials:684,talks:219,leads:36,rate:'5.3%',subtitle:'This week by day',labels:['Mon','Tue','Wed','Thu','Fri'],values:[112,128,151,143,150],trends:['↑ 8% vs last week','32.0% contact rate','↑ 5 vs last week','Target 5.0%']},month:{dials:2846,talks:917,leads:154,rate:'5.4%',subtitle:'This month by week',labels:['W1','W2','W3','W4'],values:[612,748,706,780],trends:['↑ 6% vs last month','32.2% contact rate','↑ 18 vs last month','Target 5.0%']}};
-const ids=['dials','talks','leads','rate'];
-function renderPeriod(name){const data=periods[name],max=Math.max(...data.values);ids.forEach((id,i)=>{document.getElementById('metric-'+id).textContent=data[id];document.getElementById('trend-'+id).textContent=data.trends[i]});document.getElementById('chart-subtitle').textContent=data.subtitle;document.getElementById('chart-total').textContent=data.dials+' total';document.getElementById('activity-chart').innerHTML=data.values.map((value,i)=>`<div class="bar-wrap"><div class="bar ${i===data.values.length-2?'current':''}" style="height:${Math.max(10,value/max*92)}%"></div><small>${data.labels[i]}</small></div>`).join('')}
-document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.remove('active'));button.classList.add('active');renderPeriod(button.dataset.period)}));
-document.querySelectorAll('[data-outcome]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.outcome.toLowerCase().replace(/ /g,'-'),count=document.getElementById('count-'+key);count.textContent=Number(count.textContent)+1;document.getElementById('log-feedback').textContent=button.dataset.outcome+' recorded · demo only';if(button.animate)button.animate([{transform:'scale(.97)'},{transform:'scale(1)'}],{duration:180})}));
-const dismiss=document.querySelector('.announcement button');if(dismiss)dismiss.addEventListener('click',()=>dismiss.parentElement.remove());
-const reveals=document.querySelectorAll('.reveal');if('IntersectionObserver' in window){const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting)entry.target.classList.add('visible')}),{threshold:.1});reveals.forEach(el=>observer.observe(el))}else{reveals.forEach(el=>el.classList.add('visible'))}
-const demoThemeToggle=document.getElementById('demo-theme-toggle');const savedDemoTheme=localStorage.getItem('webstat_demo_theme')||'dark';document.documentElement.dataset.demoTheme=savedDemoTheme;if(demoThemeToggle){demoThemeToggle.textContent=savedDemoTheme==='dark'?'☀':'☾';demoThemeToggle.addEventListener('click',()=>{const next=document.documentElement.dataset.demoTheme==='dark'?'light':'dark';document.documentElement.dataset.demoTheme=next;localStorage.setItem('webstat_demo_theme',next);demoThemeToggle.textContent=next==='dark'?'☀':'☾'})}
-const demoSideNav=document.querySelector('.side-nav');if(demoSideNav){demoSideNav.innerHTML='<button class="active" data-demo-page="overview">Overview</button><button data-demo-page="input">Input</button>';const main=document.querySelector('.dashboard-main'),announcement=document.querySelector('.announcement'),metrics=document.querySelector('.metrics'),panels=[...document.querySelectorAll('.dash-grid .panel')];function showDemoPage(page){demoSideNav.querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.demoPage===page));main.classList.toggle('demo-page-mode',page==='input');if(announcement)announcement.style.display=page==='overview'?'flex':'none';metrics.style.display=page==='overview'?'grid':'none';panels.forEach(panel=>{const isInput=panel.classList.contains('quick-log');panel.style.display=(page==='input'?isInput:!isInput)?'block':'none'})}demoSideNav.addEventListener('click',event=>{const button=event.target.closest('[data-demo-page]');if(button)showDemoPage(button.dataset.demoPage)});showDemoPage('overview')}
-renderPeriod('day');
+const root = document.documentElement;
+const pageThemeButton = document.getElementById('demo-theme-toggle');
+const app = document.querySelector('.tq-demo-app');
+const appThemeButton = document.querySelector('[data-app-theme]');
+
+function setTheme(theme) {
+  root.dataset.demoTheme = theme;
+  app?.classList.toggle('app-light', theme === 'light');
+  const icon = theme === 'dark' ? '\u2600' : '\u263e';
+  if (pageThemeButton) pageThemeButton.textContent = icon;
+  if (appThemeButton) appThemeButton.textContent = icon;
+  localStorage.setItem('webstat_demo_theme', theme);
+}
+
+setTheme(localStorage.getItem('webstat_demo_theme') || 'dark');
+[pageThemeButton, appThemeButton].forEach(button => button?.addEventListener('click', () => {
+  setTheme(root.dataset.demoTheme === 'dark' ? 'light' : 'dark');
+}));
+
+document.querySelectorAll('[data-demo-page]').forEach(button => button.addEventListener('click', () => {
+  const page = button.dataset.demoPage;
+  document.querySelectorAll('[data-demo-page]').forEach(item => item.classList.toggle('active', item.dataset.demoPage === page));
+  document.querySelectorAll('[data-demo-view]').forEach(view => {
+    const active = view.dataset.demoView === page;
+    view.hidden = !active;
+    view.classList.toggle('active', active);
+  });
+}));
+
+document.querySelector('.tq-notice > button')?.addEventListener('click', event => {
+  event.currentTarget.closest('.tq-notice').remove();
+});
+
+let selectedSeries = null;
+document.querySelectorAll('[data-series-button]').forEach(button => button.addEventListener('click', () => {
+  selectedSeries = selectedSeries === button.dataset.seriesButton ? null : button.dataset.seriesButton;
+  document.querySelectorAll('[data-series-button]').forEach(item => item.classList.toggle('active', item.dataset.seriesButton === selectedSeries));
+  document.querySelectorAll('.tq-chart [data-series]').forEach(line => line.classList.toggle('muted', selectedSeries && line.dataset.series !== selectedSeries));
+}));
+
+document.getElementById('demo-sync')?.addEventListener('click', event => {
+  const button = event.currentTarget;
+  button.textContent = 'Synced';
+  setTimeout(() => { button.innerHTML = '&#8635; Sync'; }, 1200);
+});
+
+const fictionalDays = [
+  ['Monday, September 1', 11, 4, 5],
+  ['Tuesday, September 2', 14, 6, 7],
+  ['Wednesday, September 3', 16, 7, 8]
+];
+let dayIndex = 1;
+document.querySelectorAll('[data-day-step]').forEach(button => button.addEventListener('click', () => {
+  dayIndex = Math.max(0, Math.min(fictionalDays.length - 1, dayIndex + Number(button.dataset.dayStep)));
+  const [label, fp, mp, ql] = fictionalDays[dayIndex];
+  document.getElementById('demo-day').textContent = label;
+  const values = document.querySelectorAll('.tq-daily-numbers strong');
+  values[0].textContent = fp;
+  values[1].textContent = mp;
+  values[2].textContent = ql;
+}));
+
+function changeCount(code, amount) {
+  const target = document.querySelector(`[data-count="${code}"]`);
+  if (!target) return;
+  target.textContent = Math.max(0, Number(target.textContent) + amount);
+  if (code === 'QL') document.getElementById('demo-ql-total').textContent = target.textContent;
+}
+
+document.querySelectorAll('[data-add]').forEach(button => button.addEventListener('click', () => {
+  const code = button.dataset.add;
+  changeCount(code, 1);
+  if (code === 'QL') {
+    const input = document.getElementById('demo-ql-note');
+    const note = input.value.trim() || 'Qualified lead recorded in the interactive demo.';
+    const item = document.createElement('li');
+    item.innerHTML = `<b>Now</b><span></span>`;
+    item.querySelector('span').textContent = note;
+    document.getElementById('demo-note-list').prepend(item);
+    document.getElementById('demo-note-count').textContent = `${document.getElementById('demo-note-list').children.length} leads`;
+    input.value = '';
+  }
+}));
+document.querySelectorAll('[data-undo]').forEach(button => button.addEventListener('click', () => changeCount(button.dataset.undo, -1)));
+
+const eyeButton = document.getElementById('demo-eye-break');
+const eyeBall = document.getElementById('demo-eye-ball');
+eyeButton?.addEventListener('mouseenter', () => eyeBall?.classList.add('active'));
+eyeButton?.addEventListener('click', () => eyeBall?.classList.toggle('active'));
+eyeBall?.addEventListener('pointerenter', () => {
+  eyeBall.style.animationDelay = `${Math.random() * -5}s`;
+});
+
+document.querySelector('.tq-signout')?.addEventListener('click', event => {
+  event.currentTarget.textContent = 'Demo only';
+  setTimeout(() => { event.currentTarget.textContent = 'Sign Out'; }, 1200);
+});
+
+const reveals = document.querySelectorAll('.reveal');
+if ('IntersectionObserver' in window) {
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (entry.isIntersecting) entry.target.classList.add('visible');
+  }), { threshold: .1 });
+  reveals.forEach(element => observer.observe(element));
+} else {
+  reveals.forEach(element => element.classList.add('visible'));
+}

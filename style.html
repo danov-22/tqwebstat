@@ -1028,4 +1028,21 @@ body {
   line-height: 1 !important;
 }
 
+
+#personal-notes { width:100%; box-sizing:border-box; resize:vertical; padding:1rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:10px; font:inherit; line-height:1.6; }
+.ql-edit-btn { cursor:pointer; padding:.35rem .6rem; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--text); }
+.ql-note-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.chart-actions { flex-wrap:wrap; }
+.app-section-nav { grid-template-columns:repeat(3,1fr); }
+
+.lead-calendar { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px; }
+.calendar-weekday { text-align:center;font-size:.8rem;color:var(--text-muted);padding:.4rem 0; }
+.calendar-day { min-height:85px;border:1px solid var(--border);border-radius:10px;background:transparent;color:var(--text);padding:8px;display:flex;flex-direction:column;align-items:flex-start;cursor:pointer; }
+.calendar-day strong { align-self:center;font-size:1.4rem; }
+.calendar-day small { align-self:center;font-size:.65rem;opacity:.65; }
+.calendar-day.has-leads { background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.5); }
+.calendar-day.is-today { outline:2px solid var(--accent);outline-offset:1px; }
+.calendar-day:hover,.calendar-day:focus-visible { border-color:var(--accent); }
+.calendar-hint { font-size:.8rem;opacity:.7; }
+@media(max-width:560px){.lead-calendar{gap:4px}.calendar-day{min-height:65px;padding:5px}.calendar-day strong{font-size:1.1rem}}
 </style>

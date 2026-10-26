@@ -383,13 +383,21 @@ try {
 // Web-app UI entry point. The old HTTP API remains available internally via
 // apiGet/doPost, but the browser no longer calls it over ContentService.
 function doGet() {
-  return HtmlService
+  var page = HtmlService
     .createTemplateFromFile('index')
     .evaluate()
     .setTitle('TQ Statistics')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
-    .setFaviconUrl('https://tqwebstat.vercel.app/tq-favicon.png?v=2')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+  // Use the direct PNG URL: query suffixes can fail favicon type validation.
+  // Keep an optional icon failure from blocking the entire application.
+  try {
+    page.setFaviconUrl('https://tqwebstat.vercel.app/tq-favicon.png');
+  } catch (error) {
+    console.warn('Custom favicon could not be applied: ' + error);
+  }
+  return page;
 }
 
 function include(filename) {
@@ -418,6 +426,7 @@ function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
     var action = body.action;
+    if (action === 'editQLNote') return editQLNote_(body);
 
     // ── Register ─────────────────────────────────────────────────
     if (action === 'register') {
@@ -975,6 +984,9 @@ if (action === 'login') {
 
 // ── Record stat ───────────────────────────────────────────────
 if (action === 'stat') {
+  var statLock = LockService.getScriptLock();
+  statLock.waitLock(10000);
+  try {
 
   var date      = String(body.date     || '').trim();
   var username  = String(body.username || '').trim();
@@ -1159,6 +1171,7 @@ if (action === 'stat') {
   return jsonResponse({
     success: true
   });
+  } finally { statLock.releaseLock(); }
 }
 
     return jsonResponse({ error: 'Unknown action: ' + action });
@@ -1166,4 +1179,76 @@ if (action === 'stat') {
   } catch (err) {
     return jsonResponse({ error: err.toString() });
   }
+}
+
+
+// Called through the existing request dispatcher; helper is private to Apps Script.
+function editQLNote_(body) {
+  var date = String(body.date || '').trim();
+  var username = String(body.username || '').trim().toLowerCase();
+  var number = Number(body.leadNumber);
+  var text = String(body.note == null ? '' : body.note);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !username || !Number.isInteger(number) || number < 1)
+    return jsonResponse({error: 'Invalid lead details.'});
+  if (text.length > 10000) return jsonResponse({error: 'Lead text must be 10,000 characters or fewer.'});
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sheet = ensureSheets().notesSheet;
+    var tz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+    var rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues() : [];
+    for (var i = 0; i < rows.length; i++) {
+      if (toDateStr(rows[i][0], tz) === date && String(rows[i][1]).trim().toLowerCase() === username && Number(rows[i][2]) === number) {
+        if (String(rows[i][3] || '').trim() !== String(body.previousNote || '').trim())
+          return jsonResponse({error: 'This lead changed. Sync and try again.'});
+        // RichTextValue writes literal text, including strings beginning with '='.
+        sheet.getRange(i + 2, 4).setRichTextValue(SpreadsheetApp.newRichTextValue().setText(text).build());
+        SpreadsheetApp.flush();
+        clearStatsCache(username, date);
+        return jsonResponse({success: true});
+      }
+    }
+    return jsonResponse({error: 'Lead no longer exists. Sync and try again.'});
+  } finally { lock.releaseLock(); }
+}
+
+// Run once from the Apps Script editor. Installs daily maintenance and cleans now.
+function setupHistoryMaintenance() {
+  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+    return trigger.getHandlerFunction() === 'cleanupStatHistory';
+  });
+  if (!exists) ScriptApp.newTrigger('cleanupStatHistory').timeBased().everyDays(1).atHour(3).create();
+  return cleanupStatHistory();
+}
+
+// Keep today's undo metadata. Never rebuild, subtract from, or clear Stats/QL_Notes.
+function cleanupStatHistory() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(HISTORY_SHEET);
+    if (!sheet) return {removed: 0};
+    var today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+    var count = sheet.getLastRow() - 1;
+    var rows = count > 0 ? sheet.getRange(2, 1, count, 7).getValues() : [];
+    var removed = 0, end = -1;
+    // Delete contiguous old ranges from the bottom, retaining malformed rows for inspection.
+    for (var i = rows.length - 1; i >= -1; i--) {
+      var date = i >= 0 ? toDateStr(rows[i][1], ss.getSpreadsheetTimeZone()) : '';
+      var old = /^\d{4}-\d{2}-\d{2}$/.test(date) && date < today;
+      if (old && end === -1) end = i;
+      if (!old && end !== -1) {
+        var length = end - i;
+        sheet.deleteRows(i + 3, length);
+        removed += length;
+        end = -1;
+      }
+    }
+    // Reclaim blank allocated rows too (getMaxRows can exceed getLastRow).
+    var used = Math.max(2, sheet.getLastRow());
+    if (sheet.getMaxRows() > used) sheet.deleteRows(used + 1, sheet.getMaxRows() - used);
+    console.log('Stat_History: removed ' + removed + ' old undo entries; kept today.');
+    return {removed: removed};
+  } finally { lock.releaseLock(); }
 }

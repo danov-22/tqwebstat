@@ -322,10 +322,12 @@ function onLoginSuccess(username) {
 
   document.getElementById('user-greeting').textContent = formatUsername(username);
 
+  loadPersonalNotes();
   initApp();
 }
 
 function doLogout() {
+  document.getElementById('personal-notes').value = '';
   currentUser = null;
   localStorage.removeItem('tq_user');
   appPage.classList.remove('visible');
@@ -345,8 +347,9 @@ document.getElementById('btn-logout').addEventListener('click', doLogout);
 const appPageButtons = document.querySelectorAll('[data-app-page]');
 const appPrimaryCards = document.querySelectorAll('.app > .card');
 const appViews = {
-  overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('daily-perf-card')],
-  input: [document.getElementById('stats-grid')]
+  overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('daily-perf-card'), document.getElementById('lead-calendar-card')],
+  input: [document.getElementById('input-performance-card'), document.getElementById('stats-grid')],
+  notes: [document.getElementById('personal-notes-card')]
 };
 const managedAppViews = [].concat.apply([], Object.keys(appViews).map(key => appViews[key])).filter(Boolean);
 
@@ -1117,7 +1120,16 @@ async function fetchMonthlyData() {
     selectedDayIndex = todayIdx;
 
     // Sync today's counts from sheet
-    const todayRow = monthlyData.find(d => d.date === todayStr);
+    // Input always previews today, even while Overview displays a past month.
+    let todayRow = monthlyData.find(d => d.date === todayStr);
+    if (selectedMonth !== todayStr.slice(0, 7)) {
+      const todaySnapshot = await new Promise((resolve, reject) => google.script.run
+        .withSuccessHandler(resolve).withFailureHandler(reject)
+        .serverMonthlyData(todayStr.slice(0, 7), currentUser));
+      if (todaySnapshot.error) throw new Error(todaySnapshot.error);
+      todayRow = (todaySnapshot.days || []).find(day => day.date === todayStr) || {};
+      qlNotesByDate[todayStr] = (todaySnapshot.ql_notes || []).filter(note => note.date === todayStr);
+    }
     if (todayRow) {
       CATEGORIES.forEach(c => { todayCounts[c.key] = Number(todayRow[c.key]) || 0; });
       todayCounts.fp = Number(todayRow.fp) || 0;
@@ -1203,6 +1215,7 @@ function isolateMonthlyDataset(event, legendItem, legend) {
 }
 
 function renderChart(data) {
+  renderLeadCalendar();
   if (!data || !data.length) { showChartState('empty'); return; }
   showChartState('chart');
 
@@ -1300,6 +1313,7 @@ function renderDailyPerformance() {
         : '<span class="ql-note-text ql-note-no-text">—</span>'
       }
 
+      <button type="button" class="ql-edit-btn" data-date="${row.date}" data-lead="${n.leadNumber}">Edit text</button>
       <button 
         class="ql-delete-btn"
         data-date="${row.date}"
@@ -1336,6 +1350,7 @@ function renderQLNotesToday() {
         : '<span class="ql-note-text ql-note-no-text">—</span>'
       }
 
+      <button type="button" class="ql-edit-btn" data-date="${today}" data-lead="${n.leadNumber}">Edit text</button>
       <button
         type="button"
         class="ql-delete-btn"
@@ -1395,6 +1410,10 @@ function renderDailyTrendChart() {
    TOTALS
    ════════════════════════════════════════════════════════════════════ */
 function updateStatCounts() {
+  ['fp', 'mp', 'ql'].forEach(key => {
+    document.getElementById('input-' + key).textContent = todayCounts[key] || 0;
+  });
+  document.getElementById('input-performance-date').textContent = todayISO();
   CATEGORIES.forEach(c => {
     const el = document.querySelector(`[data-count="${c.key}"]`);
     if (el) el.textContent = todayCounts[c.key] || 0;
@@ -1483,4 +1502,133 @@ function escapeHtml(str) {
    ════════════════════════════════════════════════════════════════════ */
 // Sessions are deliberately not persisted: every user signs in on opening
 // this shared Apps Script web app.
+
+// Personal notes stay on this browser, separately for each signed-in user.
+function personalNotesKey() {
+  return 'tq_personal_notes_v1:' + currentUser.toLowerCase().trim();
+}
+function loadPersonalNotes() {
+  const field = document.getElementById('personal-notes');
+  try {
+    field.value = localStorage.getItem(personalNotesKey()) || '';
+    field.disabled = false;
+    document.getElementById('notes-save-status').textContent = 'Saved on this browser only';
+  } catch {
+    field.value = '';
+    field.disabled = true;
+    document.getElementById('notes-save-status').textContent = 'Browser storage unavailable. Enable local storage to use notes.';
+  }
+}
+document.getElementById('personal-notes').addEventListener('input', event => {
+  if (!currentUser) return;
+  try {
+    localStorage.setItem(personalNotesKey(), event.target.value);
+    document.getElementById('notes-save-status').textContent = 'Saved locally at ' + new Date().toLocaleTimeString();
+  } catch {
+    document.getElementById('notes-save-status').textContent = 'Could not save. Copy your notes before leaving this page.';
+  }
+});
+
+document.addEventListener('click', async event => {
+  const button = event.target.closest('.ql-edit-btn');
+  if (!button || !currentUser) return;
+  const {date, lead} = button.dataset;
+  const entry = (qlNotesByDate[date] || []).find(n => n.leadNumber === Number(lead));
+  if (!entry) return;
+  const text = prompt('Add or edit text for Lead ' + lead, entry.note || '');
+  if (text === null) return;
+  button.disabled = true;
+  try {
+    const result = await postToScript({action: 'editQLNote', username: currentUser,
+      date, leadNumber: Number(lead), note: text, previousNote: entry.note || ''});
+    if (result.error) throw new Error(result.error);
+    entry.note = text;
+    renderQLNotesToday();
+    renderDailyPerformance();
+    showToast('Lead text saved', 'success');
+  } catch (error) { showToast(error.message || 'Could not save lead text', 'error'); }
+  finally { button.disabled = false; }
+});
+
+
+function calendarDays(month, data) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return [];
+  const [year, number] = month.split('-').map(Number);
+  const length = new Date(year, number, 0).getDate();
+  return Array.from({length}, (_, i) => {
+    const date = month + '-' + String(i + 1).padStart(2, '0');
+    const row = data.find(day => day.date === date);
+    return {date, day: i + 1, count: Number(row && row.ql) || 0, recorded: !!row};
+  });
+}
+function renderLeadCalendar() {
+  const days = calendarDays(selectedMonth, monthlyData);
+  const calendar = document.getElementById('lead-calendar');
+  if (!calendar || !days.length) return;
+  const label = new Date(selectedMonth + '-01T12:00:00').toLocaleDateString('en-US', {month:'long',year:'numeric'});
+  document.getElementById('calendar-month-label').textContent = label;
+  document.getElementById('calendar-month-total').textContent = days.reduce((sum, day) => sum + day.count, 0) + ' qualified leads';
+  const offset = new Date(selectedMonth + '-01T12:00:00').getDay();
+  calendar.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => '<div class="calendar-weekday">' + day + '</div>').join('')
+    + Array.from({length:offset}, () => '<div aria-hidden="true"></div>').join('')
+    + days.map(day => `<button type="button" class="calendar-day ${day.count ? 'has-leads' : ''} ${day.date === todayISO() ? 'is-today' : ''}"
+      data-calendar-date="${day.date}" aria-label="${day.date}: ${day.count} qualified leads" ${day.date === todayISO() ? 'aria-current="date"' : ''}>
+      <span>${day.day}</span><strong>${day.count}</strong><small>QL</small></button>`).join('');
+}
+document.getElementById('lead-calendar').addEventListener('click', event => {
+  const button = event.target.closest('[data-calendar-date]');
+  if (!button) return;
+  const date = button.dataset.calendarDate;
+  let index = monthlyData.findIndex(day => day.date === date);
+  if (index < 0) {
+    monthlyData = normalizeMonthlyData([...monthlyData, {date, ...emptyCounts(), fp:0, mp:0}]);
+    index = monthlyData.findIndex(day => day.date === date);
+  }
+  selectedDayIndex = index;
+  renderDailyPerformance();
+  document.getElementById('daily-perf-card').scrollIntoView({behavior:'smooth', block:'start'});
+});
+
+function monthlyReportHTML(month, user, data) {
+  const keys = ['ql','vm','snr','ni','hu','dnc','ooo','lb','fe','wn','fp','mp'];
+  const days = normalizeMonthlyData(data.days || []).filter(day => day.date.startsWith(month));
+  const notes = (data.ql_notes || []).filter(note => note.date.startsWith(month))
+    .sort((a,b) => a.date.localeCompare(b.date) || a.leadNumber - b.leadNumber);
+  const totals = keys.map(key => days.reduce((sum, day) => sum + (Number(day[key]) || 0), 0));
+  const cells = values => values.map(value => '<td>' + escapeHtml(String(value)) + '</td>').join('');
+  const label = new Date(month + '-01T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  return `<!doctype html><html><head><meta charset="utf-8"><title>TQ monthly report ${month}</title>
+    <style>@page{size:A4 landscape;margin:14mm}body{font:12px Arial,sans-serif;color:#172033;margin:24px}h1{font-size:24px}h2{margin-top:28px}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid #ccd3dd;padding:7px;text-align:left}th,tfoot{background:#eef2f7;font-weight:bold}thead{display:table-header-group}tr{break-inside:avoid}.note{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#526174}.print-tools{padding:14px;background:#eef2f7}button{padding:10px 16px;cursor:pointer}@media print{body{margin:0}.print-tools{display:none}}</style></head>
+    <body><div class="print-tools"><button onclick="window.print()">Save as PDF / Print</button> Choose ?Save as PDF? in the destination menu.</div>
+    <h1>TQ Web Stats ? Monthly report</h1><p>${escapeHtml(label)} ? ${escapeHtml(user)}</p>
+    <h2>Statistics</h2><table><thead><tr><th>Date</th>${keys.map(key => '<th>' + key.toUpperCase() + '</th>').join('')}</tr></thead><tbody>
+    ${days.length ? days.map(day => '<tr>' + cells([day.date,...keys.map(key => Number(day[key]) || 0)]) + '</tr>').join('') : '<tr><td colspan="13">No statistics recorded for this month.</td></tr>'}
+    </tbody><tfoot><tr>${cells(['Monthly total',...totals])}</tr></tfoot></table>
+    <p class="muted">QL: Qualified leads ? VM: Voicemail ? SNR: Silence / No response ? NI: Not interested ? HU: Hung up ? DNC: Do not call ? OOO: Out of office ? LB: Language barrier ? FE: FE category ? WN: Wrong number ? FP: Full pitch ? MP: Money part</p>
+    <h2>Qualified lead notes</h2><table><thead><tr><th>Date</th><th>Lead</th><th>Notes</th></tr></thead><tbody>
+    ${notes.length ? notes.map(note => '<tr>' + cells([note.date,note.leadNumber]) + '<td class="note">' + escapeHtml(note.note || '?') + '</td></tr>').join('') : '<tr><td colspan="3">No lead notes recorded for this month.</td></tr>'}
+    </tbody></table><p class="muted">Generated ${escapeHtml(new Date().toLocaleString())}</p></body></html>`;
+}
+async function exportMonthlyPDF(button) {
+  if (!currentUser || !selectedMonth) return;
+  if (queueRunning || saveQueue.length) { showToast('Wait for your changes to finish saving, then export.', 'info'); return; }
+  // Open on the click itself so popup blockers can recognize the user gesture.
+  const report = window.open('', '_blank');
+  if (!report) { showToast('Allow popups to open the PDF report.', 'error'); return; }
+  report.document.write('<!doctype html><title>Preparing report</title><p>Preparing your monthly report?</p>');
+  report.document.close();
+  const month = selectedMonth, user = currentUser;
+  button.disabled = true;
+  try {
+    const data = await new Promise((resolve,reject) => google.script.run.withSuccessHandler(resolve)
+      .withFailureHandler(reject).serverMonthlyData(month,user));
+    if (data.error) throw new Error(data.error);
+    if (currentUser !== user) { report.close(); return; }
+    if (report.closed) return;
+    report.document.open(); report.document.write(monthlyReportHTML(month,user,data)); report.document.close();
+    report.focus();
+  } catch { if (!report.closed) report.close(); showToast('Could not prepare the PDF report. Please try again.', 'error'); }
+  finally { button.disabled = false; }
+}
+document.getElementById('download-report').addEventListener('click', event => exportMonthlyPDF(event.currentTarget));
 </script>

@@ -86,6 +86,10 @@ assert.equal(chatData.length,2); // Retry does not duplicate.
 assert.match(request(aliceToken,'chatSend',{requestId:'invalid-target-0001',peer:'unknown',text:'hello'}).error,/registered/);
 assert.match(request(aliceToken,'chatSend',{requestId:'too-long-message-01',text:'x'.repeat(4001)}).error,/4,000/);
 assert.throws(()=>request('forged','chatList'),/CHAT_AUTH/);
+assert.equal(request(bobToken,'chatUnread').messages.length,2);
+assert.equal(request(aliceToken,'chatUnread').messages.length,0);
+assert.equal(request(eveToken,'chatUnread').messages.length,1);
+assert.throws(()=>request('forged','chatUnread'),/CHAT_AUTH/);
 chatData[1][5]=Date.now()-1;
 assert.equal(request(bobToken,'chatList',{peer:'alice'}).messages.length,0);
 chatContext.cleanupExpiredChat(); assert.equal(chatData.length,1);
@@ -98,3 +102,12 @@ request(aliceToken,'chatLogout'); assert.throws(()=>request(aliceToken,'chatList
 cache.set('chat-session:'+eveToken,JSON.stringify({user:'eve',expires:Date.now()-1}));
 assert.throws(()=>request(eveToken,'chatList'),/CHAT_AUTH/);
 console.log('Passed: verified chat identity, private isolation, author-only recall, idempotent sends, validation, seven-day expiry, cleanup, pagination, session expiry and logout.');
+
+const chartReport = ui.monthlyReportHTML('2026-10','Alice',{days:[{date:'2026-10-01',ql:3,vm:4,fp:10,mp:10}]});
+assert.ok(chartReport.includes('<svg'));
+assert.ok(chartReport.includes('Day 1: 7 calls'));
+assert.ok(!chartReport.includes('NaN'));
+assert.ok(ui.monthlyReportHTML('2026-02','Alice',{}).includes('Day 28: 0 calls'));
+const clientSource = html.replace(/^<script>/,'').replace(/<\/script>\s*$/,'');
+new vm.Script(clientSource);
+console.log('Passed: unread sender exclusion, private isolation, invalid sessions, printable call chart, empty month chart, client syntax.');

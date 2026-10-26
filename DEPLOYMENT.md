@@ -45,3 +45,13 @@ Messages are hidden exactly seven days after sending. The hourly trigger deletes
 Chat sessions are issued only after successful login/registration, stored in server cache, and held only in the open page's memory. They last at most six hours and can expire earlier if Google evicts the cache entry; users then sign out and sign in again. Signing out revokes the session. Invalid tokens and attempts to recall someone else's messages are rejected. Text is limited to 4,000 characters and stored literally to avoid spreadsheet formula execution. Each user can send up to 20 messages per minute.
 
 Automated mocked checks cover sender spoofing, private-message isolation, recall ownership, deduplicated sends, invalid recipients, message size, seven-day expiry, physical cleanup, pagination, session expiry, and logout. A live multi-account browser check remains necessary after deployment.
+
+## Readability, call totals, chat badges, and report chart
+
+Update all four Apps Script files (backend, index, script, style) and deploy a new version using the existing URL. Publish the updated demo and portal CSS through the usual static hosting process.
+
+Small text now has a 15px minimum, with larger admin notices. Login, registration, and password confirmation each include a Show/Hide password button. Input shows today's and yesterday's call totals above performance, including when yesterday falls in the previous month or Overview shows another month.
+
+The Chat tab displays the number of unread incoming public and private messages. Counts refresh every 10 seconds while the app is visible, across all app sections. Opening a conversation marks fetched messages as read. Read IDs persist per user on this browser; existing unexpired messages appear unread on first use. Recalled and expired messages drop from the count. The PDF includes a printable daily total calls line chart, with FP and MP excluded from call totals.
+
+After deploying, verify with two accounts that the badge increases while viewing Input and clears after reading the relevant conversation. Check show/hide controls, mobile text wrapping, month-boundary call totals, and the chart in PDF print preview.

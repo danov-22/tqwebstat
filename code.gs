@@ -426,7 +426,7 @@ function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
     var action = body.action;
-    if (['chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
+    if (['chatUnread', 'chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
     if (action === 'editQLNote') return editQLNote_(body);
 
     // ── Register ─────────────────────────────────────────────────
@@ -1302,6 +1302,11 @@ function chatRequest_(body) {
     var now = Date.now();
     var sheet = chatSheet_();
     var rows = chatRows_(sheet);
+    if (body.action === 'chatUnread') {
+      return jsonResponse({messages: rows.filter(function(row) {
+        return Number(row[5]) > now && String(row[1]) !== user && (!row[2] || String(row[2]) === user);
+      }).map(function(row) { return {id:String(row[0]), peer:String(row[2]) ? String(row[1]) : ''}; })});
+    }
     if (body.action === 'chatRecall') {
       var id = String(body.id || '');
       for (var i = 0; i < rows.length; i++) {

@@ -28,6 +28,8 @@ const CATEGORIES = [
 /* ── App state ───────────────────────────────────────────────────── */
 let currentUser       = null;
 let chatToken = '';
+let unreadTimer = null, unreadBusy = false;
+let inputYesterdayCalls = 0;
 let chatPeer = '';
 let chatTimer = null;
 let chatVersion = 0;
@@ -335,9 +337,13 @@ function onLoginSuccess(username) {
   loadPersonalNotes();
   showAppPage('overview');
   initApp();
+  refreshUnreadChat();
+  unreadTimer = setInterval(() => { if (!document.hidden) refreshUnreadChat(); }, 10000);
 }
 
 function doLogout() {
+  clearInterval(unreadTimer);
+  document.getElementById('chat-unread').hidden = true;
   if (chatToken) postToScript({action:'chatLogout', token:chatToken}).catch(() => {});
   chatToken = '';
   stopChat();
@@ -1158,6 +1164,13 @@ async function fetchMonthlyData() {
       todayCounts.mp = Number(todayRow.mp) || 0;
     }
 
+    const yesterdayDate = new Date(todayStr + 'T12:00:00');
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = yesterdayDate.getFullYear() + '-' + String(yesterdayDate.getMonth()+1).padStart(2,'0') + '-' + String(yesterdayDate.getDate()).padStart(2,'0');
+    const previousData = yesterday.slice(0,7) === selectedMonth ? {days:monthlyData} : await new Promise((resolve,reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).serverMonthlyData(yesterday.slice(0,7),currentUser));
+    if (previousData.error) throw new Error(previousData.error);
+    const previousRow = (previousData.days || []).find(day => day.date === yesterday) || {};
+    inputYesterdayCalls = CATEGORIES.reduce((sum,c) => sum + (Number(previousRow[c.key]) || 0),0);
     updateStatCounts();
     updateTotalCalls();
     renderChart(monthlyData);
@@ -1279,13 +1292,13 @@ function renderChart(data) {
       plugins: {
         legend: {
           onClick: isolateMonthlyDataset,
-          labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } }
+          labels: { color: '#94a3b8', boxWidth: 12, font: { size: 14 } }
         },
         tooltip: { backgroundColor: '#1a1d27', borderColor: '#2a2d3a', borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#94a3b8' }
       },
       scales: {
-        x: { ticks: { color: '#7c8499', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,.04)' } },
-        y: { beginAtZero: true, ticks: { color: '#7c8499', font: { size: 11 }, precision: 0 }, grid: { color: 'rgba(255,255,255,.04)' } }
+        x: { ticks: { color: '#7c8499', font: { size: 14 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#7c8499', font: { size: 14 }, precision: 0 }, grid: { color: 'rgba(255,255,255,.04)' } }
       }
     }
   });
@@ -1417,12 +1430,12 @@ function renderDailyTrendChart() {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: '#94a3b8', boxWidth: 10, font: { size: 10 } } },
+        legend: { labels: { color: '#94a3b8', boxWidth: 10, font: { size: 14 } } },
         tooltip: { backgroundColor: '#1a1d27', borderColor: '#2a2d3a', borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#94a3b8' }
       },
       scales: {
-        x: { ticks: { color: '#7c8499', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
-        y: { beginAtZero: true, ticks: { color: '#7c8499', font: { size: 10 }, precision: 0 }, grid: { color: 'rgba(255,255,255,.04)' } }
+        x: { ticks: { color: '#7c8499', font: { size: 14 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: { beginAtZero: true, ticks: { color: '#7c8499', font: { size: 14 }, precision: 0 }, grid: { color: 'rgba(255,255,255,.04)' } }
       }
     }
   });
@@ -1436,6 +1449,8 @@ function updateStatCounts() {
     document.getElementById('input-' + key).textContent = todayCounts[key] || 0;
   });
   document.getElementById('input-performance-date').textContent = todayISO();
+  document.getElementById('input-today-calls').textContent = CATEGORIES.reduce((sum,c) => sum + (Number(todayCounts[c.key]) || 0),0);
+  document.getElementById('input-yesterday-calls').textContent = inputYesterdayCalls;
   CATEGORIES.forEach(c => {
     const el = document.querySelector(`[data-count="${c.key}"]`);
     if (el) el.textContent = todayCounts[c.key] || 0;
@@ -1621,11 +1636,24 @@ function monthlyReportHTML(month, user, data) {
   const label = new Date(month + '-01T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'});
   const monthName = new Date(month + '-01T12:00:00').toLocaleDateString('en-US', {month:'long'});
   const displayName = user.trim().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+  const chartDays = calendarDays(month, days);
+  const values = chartDays.map(item => {
+    const day = days.find(day => day.date === item.date) || {};
+    return keys.slice(0,10).reduce((sum,key) => sum + (Number(day[key]) || 0),0);
+  });
+  const max = Math.max(1,...values);
+  const points = values.map((value,i) => (60+i*880/(values.length-1)).toFixed(1)+','+(220-value/max*170).toFixed(1)).join(' ');
+  const graphic = '<section style="break-inside:avoid"><h2>Daily total calls</h2><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 270" role="img" aria-label="Daily total calls line chart" style="width:100%;height:auto;max-height:260px"><title>Daily total calls for '+escapeHtml(label)+'</title>'+
+    [0,.5,1].map(f => '<line x1="60" x2="940" y1="'+(220-f*170)+'" y2="'+(220-f*170)+'" stroke="#ccd3dd"/><text x="48" y="'+(225-f*170)+'" text-anchor="end" font-size="16">'+Math.round(max*f)+'</text>').join('')+
+    '<polyline points="'+points+'" fill="none" stroke="#2563eb" stroke-width="3"/>'+
+    values.map((value,i) => '<circle cx="'+(60+i*880/(values.length-1))+'" cy="'+(220-value/max*170)+'" r="3" fill="#2563eb"><title>Day '+(i+1)+': '+value+' calls</title></circle>').join('')+
+    [0,6,13,20,values.length-1].map(i => '<text x="'+(60+i*880/(values.length-1))+'" y="249" text-anchor="middle" font-size="16">'+(i+1)+'</text>').join('')+
+    '<text x="500" y="268" text-anchor="middle" font-size="16">Day of month</text></svg><p class="muted">Total calls across call outcome categories; full pitch and money part are excluded to avoid double counting.</p></section>';
   return `<!doctype html><html><head><meta charset="utf-8"><title>Monthly Report, ${escapeHtml(monthName)}</title>
-    <style>@page{size:A4 landscape;margin:0}body{font:12px Arial,sans-serif;color:#172033;margin:24px}h1{font-size:24px}h2{margin-top:28px}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid #ccd3dd;padding:7px;text-align:left}th,tfoot{background:#eef2f7;font-weight:bold}thead{display:table-header-group}tr{break-inside:avoid}.note{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#526174}.print-tools{padding:14px;background:#eef2f7}button{padding:10px 16px;cursor:pointer}@media print{body{margin:0;padding:14mm}.print-tools{display:none}}</style></head>
+    <style>@page{size:A4 landscape;margin:0}body{font:15px Arial,sans-serif;color:#172033;margin:24px}h1{font-size:24px}h2{margin-top:28px}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid #ccd3dd;padding:7px;text-align:left}th,tfoot{background:#eef2f7;font-weight:bold}thead{display:table-header-group}tr{break-inside:avoid}.note{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#526174}.print-tools{padding:14px;background:#eef2f7}button{padding:10px 16px;cursor:pointer}@media print{body{margin:0;padding:14mm}.print-tools{display:none}}</style></head>
     <body><div class="print-tools"><button onclick="window.print()">Save as PDF / Print</button> Choose "Save as PDF" in the destination menu. Turn off "Headers and footers" in print settings to hide the browser address and page headers.</div>
     <h1>TQ Web Stat - Monthly report</h1><p>${escapeHtml(displayName)}</p><p class="muted">${escapeHtml(label)}</p>
-    <h2>Statistics</h2><table><thead><tr><th>Date</th>${keys.map(key => '<th>' + key.toUpperCase() + '</th>').join('')}</tr></thead><tbody>
+    ${graphic}<h2>Statistics</h2><table><thead><tr><th>Date</th>${keys.map(key => '<th>' + key.toUpperCase() + '</th>').join('')}</tr></thead><tbody>
     ${days.length ? days.map(day => '<tr>' + cells([day.date,...keys.map(key => Number(day[key]) || 0)]) + '</tr>').join('') : '<tr><td colspan="13">No statistics recorded for this month.</td></tr>'}
     </tbody><tfoot><tr>${cells(['Monthly total',...totals])}</tr></tfoot></table>
     <p class="muted">QL: Qualified leads -- VM: Voicemail -- SNR: Silence / No response -- NI: Not interested -- HU: Hung up -- DNC: Do not call -- OOO: Out of office -- LB: Language barrier -- FE: FE category -- WN: Wrong number -- FP: Full pitch -- MP: Money part</p>
@@ -1720,6 +1748,8 @@ async function refreshChat(older = false) {
       chatMessages = result.messages;
     }
     chatHasMore = result.hasMore;
+    markChatRead(result.messages);
+    refreshUnreadChat();
     renderChatMessages();
     const select = document.getElementById('chat-peer');
     select.innerHTML = '<option value="">Choose a user</option>' + result.users.map(user =>
@@ -1775,5 +1805,37 @@ document.getElementById('chat-form').addEventListener('submit', async event => {
   finally { button.disabled = false; }
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && chatActive) refreshChat(); });
+
+
+document.querySelectorAll('[data-password]').forEach(button => button.addEventListener('click', () => {
+  const input = document.getElementById(button.dataset.password);
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  button.textContent = show ? 'Hide password' : 'Show password';
+  button.setAttribute('aria-pressed', String(show));
+}));
+function chatReadIds() {
+  try { return JSON.parse(localStorage.getItem('tq_chat_read:' + currentUser.toLowerCase().trim()) || '[]'); } catch { return []; }
+}
+function markChatRead(messages) {
+  if (document.hidden || !chatActive) return;
+  const ids = [...new Set([...chatReadIds(), ...messages.map(message => message.id)])].slice(-10000);
+  try { localStorage.setItem('tq_chat_read:' + currentUser.toLowerCase().trim(), JSON.stringify(ids)); } catch {}
+}
+async function refreshUnreadChat() {
+  if (!currentUser || !chatToken || unreadBusy) return;
+  const user = currentUser, token = chatToken;
+  unreadBusy = true;
+  try {
+    const result = await postToScript({action:'chatUnread',token});
+    if (currentUser !== user || chatToken !== token) return;
+    const read = new Set(chatReadIds());
+    const count = result.messages.filter(message => !read.has(message.id)).length;
+    const badge = document.getElementById('chat-unread');
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+    badge.setAttribute('aria-label', count + ' unread messages');
+  } catch {} finally { unreadBusy = false; }
+}
 
 </script>

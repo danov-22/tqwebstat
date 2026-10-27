@@ -117,7 +117,8 @@ assert.ok(!chartReport.includes('<h2>Daily leads</h2>'));
 assert.ok(chartReport.includes('viewBox="0 0 1000 230"'));
 assert.ok(chartReport.includes('paint-order="stroke"'));
 assert.ok(chartReport.includes('break-before:page;break-after:page'));
-assert.ok(ui.monthlyReportHTML('2026-02','Alice',{}).includes('Total calls, day 28: 0'));
+assert.ok(ui.monthlyReportHTML('2026-02','Alice',{}).includes('Total calls, day 27: 0'));
+assert.ok(!ui.monthlyReportHTML('2026-02','Alice',{}).includes('Total calls, day 28:'));
 const clientSource = html.replace(/^<script>/,'').replace(/<\/script>\s*$/,'');
 new vm.Script(clientSource);
 console.log('Passed: unread sender exclusion, private isolation, invalid sessions, printable call chart, empty month chart, client syntax.');
@@ -128,8 +129,13 @@ for (const month of ['2026-02','2024-02','2026-04','2026-10']) {
   assert.equal((weeklyReport.match(/<section class="report-week">/g)||[]).length,4);
   assert.equal((weeklyReport.match(/<h3>Weekly activities<\/h3>/g)||[]).length,4);
   assert.equal((weeklyReport.match(/<h3>Weekly leads<\/h3>/g)||[]).length,4);
-  assert.ok(weeklyReport.includes('Total calls, day '+lastDay+': 5'));
-  assert.ok(weeklyReport.includes('Qualified leads (QL), day '+lastDay+': 2'));
+  const weekend = [0,6].includes(new Date(month+'-'+lastDay+'T12:00:00').getDay());
+  assert.equal(weeklyReport.includes('Total calls, day '+lastDay+': 5'),!weekend);
+  assert.equal(weeklyReport.includes('Qualified leads (QL), day '+lastDay+': 2'),!weekend);
+  const plottedDays = [...weeklyReport.matchAll(/<title>Total calls, day (\d+):/g)].map(match => Number(match[1]));
+  const expectedDays = Array.from({length:lastDay},(_,i) => i+1).filter(day => ![0,6].includes(new Date(month+'-'+String(day).padStart(2,'0')+'T12:00:00').getDay()));
+  assert.deepEqual(plottedDays,expectedDays);
+  assert.ok(weeklyReport.includes('<strong>5</strong>Total calls'));
   assert.ok(!weeklyReport.includes('NaN'));
 }
 console.log('Passed: four weekly chart pairs, month-end coverage for 28/29/30/31 days, call totals excluding pitch flags, and separate lead comparisons.');

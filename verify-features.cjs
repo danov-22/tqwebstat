@@ -105,9 +105,16 @@ console.log('Passed: verified chat identity, private isolation, author-only reca
 
 const chartReport = ui.monthlyReportHTML('2026-10','Alice',{days:[{date:'2026-10-01',ql:3,vm:4,fp:10,mp:10}]});
 assert.ok(chartReport.includes('<svg'));
-assert.ok(chartReport.includes('Day 1: 7 calls'));
+assert.ok(chartReport.includes('Daily calls, day 1: 7'));
 assert.ok(!chartReport.includes('NaN'));
-assert.ok(ui.monthlyReportHTML('2026-02','Alice',{}).includes('Day 28: 0 calls'));
+assert.ok(chartReport.includes('Monthly overview'));
+assert.ok(chartReport.includes('<strong>7</strong>Total calls'));
+assert.ok(chartReport.includes('<strong>3</strong>Qualified leads'));
+assert.ok(chartReport.includes('Daily leads (QL), day 1: 3'));
+assert.equal((chartReport.match(/<polyline /g) || []).length,14);
+assert.ok(chartReport.includes('stroke-dasharray="5 4" opacity="0.65"'));
+assert.ok(chartReport.includes('<h2>Daily leads</h2>'));
+assert.ok(ui.monthlyReportHTML('2026-02','Alice',{}).includes('Daily calls, day 28: 0'));
 const clientSource = html.replace(/^<script>/,'').replace(/<\/script>\s*$/,'');
 new vm.Script(clientSource);
 console.log('Passed: unread sender exclusion, private isolation, invalid sessions, printable call chart, empty month chart, client syntax.');

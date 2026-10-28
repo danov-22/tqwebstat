@@ -55,3 +55,16 @@ Small text now has a 15px minimum, with larger admin notices. Login, registratio
 The Chat tab displays the number of unread incoming public and private messages. Counts refresh every 10 seconds while the app is visible, across all app sections. Opening a conversation marks fetched messages as read. Read IDs persist per user on this browser; existing unexpired messages appear unread on first use. Recalled and expired messages drop from the count. The PDF includes a printable daily total calls line chart, with FP and MP excluded from call totals.
 
 After deploying, verify with two accounts that the badge increases while viewing Input and clears after reading the relevant conversation. Check show/hide controls, mobile text wrapping, month-boundary call totals, and the chart in PDF print preview.
+
+
+## Offline input queue
+
+Update `code.gs`, `index` from [appscript_index.html](./appscript_index.html), and `script` from [script.html](./script.html), then deploy a new version. Deploy the backend together with the client: offline retries require server receipts. The backend creates `Input_Receipts` automatically; retain this sheet to preserve duplicate protection.
+
+The already-open app accepts call inputs, quality flags, qualified lead notes, and queued undo actions during connection outages. It stores pending operations and a local snapshot per username in browser local storage before sending them. Network failures retain inputs and retry every 15 seconds; reconnecting triggers an immediate retry. Inputs keep their original date. Sign back into the same account after a reload to recover pending inputs. Storage failures reject new inputs visibly. Do not clear browser data while inputs are pending. Personal notes retain their existing local storage behavior; chat, registration, report downloads, and editing previously saved lead notes still require the server.
+
+The save status distinguishes pending local inputs from synced inputs. A validation rejection pauses the queue without deleting it; use Retry pending inputs after resolving the issue. If an execution stops after its receipt is reserved but before the result is recorded, syncing pauses for admin reconciliation rather than risking a duplicate. Review that request's payload against Stats, QL_Notes, and history before filling its Response cell with the confirmed result or removing an unapplied reservation. Historical undo actions can be rejected after daily history cleanup; they stay queued for review.
+
+Google Apps Script serves the app shell remotely, so opening/reloading the app without a connection is not supported. Keep the tab open during an outage. Browser local storage is temporary device-local storage, not a backup, and cannot synchronize across devices until connectivity returns.
+
+Run `node verify-offline.cjs` and `node verify-features.cjs`. After deployment, disconnect an already-open tab, add calls with FP/MP and a lead note, reconnect, and verify the exact totals in Sheets. Also test a reload with pending inputs, storage-disabled behavior, and a second username.

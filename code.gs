@@ -405,8 +405,41 @@ function include(filename) {
 }
 
 function serverRequest(payload) {
-  var output = doPost({ postData: { contents: JSON.stringify(payload) } });
-  return JSON.parse(output.getContent());
+  var invoke = function() {
+    var output = doPost({postData:{contents:JSON.stringify(payload)}});
+    return JSON.parse(output.getContent());
+  };
+  if (!payload.requestId || ['stat','undoLastStat','undoLastQL'].indexOf(payload.action) === -1) return invoke();
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(payload.requestId)) return {error:'Invalid input request ID.'};
+  // A separate lock serializes retries without nesting the mutation's script lock.
+  var receiptLock = LockService.getUserLock();
+  receiptLock.waitLock(30000);
+  try {
+    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var receipts = spreadsheet.getSheetByName('Input_Receipts');
+    if (!receipts) {
+      receipts = spreadsheet.insertSheet('Input_Receipts');
+      receipts.appendRow(['Request ID','Username','Payload','Response']);
+    }
+    var fingerprint = JSON.stringify(payload);
+    var user = String(payload.username || '').trim().toLowerCase();
+    var rows = receipts.getLastRow() > 1 ? receipts.getRange(2,1,receipts.getLastRow()-1,4).getValues() : [];
+    for (var i=0;i<rows.length;i++) {
+      if (String(rows[i][0]) !== payload.requestId) continue;
+      if (String(rows[i][1]) !== user || String(rows[i][2]) !== fingerprint) return {error:'Input request ID conflict.'};
+      if (!rows[i][3]) return {error:'An earlier sync was interrupted. Ask the admin to reconcile request '+payload.requestId+' in Input_Receipts before retrying'};
+      return JSON.parse(String(rows[i][3]));
+    }
+    // Record intent first. An interrupted execution requires reconciliation,
+    // rather than risking replay of an input that might already be committed.
+    var row = receipts.getLastRow()+1;
+    receipts.getRange(row,1,1,4).setValues([[payload.requestId,user,fingerprint,'']]);
+    SpreadsheetApp.flush();
+    var result = invoke();
+    receipts.getRange(row,4).setValue(JSON.stringify(result));
+    SpreadsheetApp.flush();
+    return result;
+  } finally { receiptLock.releaseLock(); }
 }
 
 function serverMonthlyData(month, username) {

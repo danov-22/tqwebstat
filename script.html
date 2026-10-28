@@ -326,7 +326,8 @@ function formatUsername(username) {
 
 function onLoginSuccess(username) {
   currentUser = username;
-  localStorage.setItem('tq_user', username);
+  try { localStorage.setItem('tq_user', username); } catch {}
+  restoreOutbox();
 
   authPage.style.display = 'none';
   appPage.classList.add('visible');
@@ -337,11 +338,15 @@ function onLoginSuccess(username) {
   loadPersonalNotes();
   showAppPage('overview');
   initApp();
+  processSaveQueue();
   refreshUnreadChat();
   unreadTimer = setInterval(() => { if (!document.hidden) refreshUnreadChat(); }, 10000);
 }
 
 function doLogout() {
+  if (queueRunning) { showToast('Wait for the current sync request to finish before signing out.', 'info'); return; }
+  clearTimeout(retryTimer);
+  saveQueue.length = 0;
   clearInterval(unreadTimer);
   document.getElementById('chat-unread').hidden = true;
   if (chatToken) postToScript({action:'chatLogout', token:chatToken}).catch(() => {});
@@ -354,7 +359,7 @@ function doLogout() {
   document.getElementById('chat-text').value = '';
   document.getElementById('personal-notes').value = '';
   currentUser = null;
-  localStorage.removeItem('tq_user');
+  try { localStorage.removeItem('tq_user'); } catch {}
   appPage.classList.remove('visible');
   authPage.style.display = '';
   setEyeGamePage(false);
@@ -401,12 +406,14 @@ showAppPage('overview');
 
 async function postToScript(payload) {
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Server response timed out')),30000);
     google.script.run
       .withSuccessHandler(result => {
-        if (result && result.error) reject(new Error(result.error));
+        clearTimeout(timeout);
+        if (result && result.error) { const error = new Error(result.error); error.application = true; reject(error); }
         else resolve(result || { success: true });
       })
-      .withFailureHandler(error => reject(new Error(error.message || error)))
+      .withFailureHandler(error => { clearTimeout(timeout); reject(new Error(error.message || error)); })
       .serverRequest(payload);
   });
 }
@@ -415,73 +422,96 @@ async function postToScript(payload) {
 /* ── Save queue ─────────────────────────────────────────────────── */
 const saveQueue = [];
 let queueRunning = false;
-let savesPaused = false;
-
-function isFatalApiError(err) {
-  return /HTTP 404|Invalid response from Apps Script|Empty response from Apps Script/.test(
-    String(err && err.message)
-  );
+let retryTimer;
+let syncProblem = '';
+let inputVersion = 0;
+const offlineKey = user => 'tq_outbox_v1:' + user.toLowerCase().trim();
+function persistOutbox(acknowledgedId) {
+  const previous = JSON.parse(localStorage.getItem(offlineKey(currentUser)) || '{}');
+  const jobs = new Map((previous.jobs || []).map(job => [job.payload.requestId,job]));
+  saveQueue.forEach(job => jobs.set(job.payload.requestId,{payload:job.payload}));
+  if (acknowledgedId) jobs.delete(acknowledgedId);
+  localStorage.setItem(offlineKey(currentUser), JSON.stringify({
+    jobs:[...jobs.values()],
+    snapshot:{date:todayISO(),counts:todayCounts,days:monthlyData,notes:qlNotesByDate}
+  }));
 }
-
-function failQueuedSaves(err) {
-  while (saveQueue.length) {
-    const queuedJob = saveQueue.shift();
-    if (queuedJob.onFail) queuedJob.onFail(err);
-  }
+function restoreOutbox() {
+  saveQueue.length = 0;
+  syncProblem = '';
+  try {
+    const saved = JSON.parse(localStorage.getItem(offlineKey(currentUser)) || '{}');
+    saveQueue.push(...(saved.jobs || []));
+    const snapshot = saved.snapshot;
+    if (snapshot) {
+      monthlyData = snapshot.days || [];
+      qlNotesByDate = snapshot.notes || {};
+      todayCounts = snapshot.date === todayISO() ? snapshot.counts : {...emptyCounts(),fp:0,mp:0};
+    }
+  } catch { syncProblem = 'Browser storage could not be read. Keep this page open.'; }
+  updateSyncStatus();
 }
-
+function updateSyncStatus() {
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  el.textContent = syncProblem || (saveQueue.length ? saveQueue.length+' input(s) stored locally - '+(queueRunning ? 'syncing...' : 'waiting to sync') : 'All inputs synced');
+}
 function queueSave(payload, onSuccess, onFail) {
-  if (!payload.username) {
-    if (onFail) onFail(new Error('Not logged in. Please sign in again.'));
-    return;
+  if (!currentUser || !payload.username) { if (onFail) onFail(new Error('Please sign in again.')); return; }
+  const job = {payload:{...payload,requestId:crypto.randomUUID()},onSuccess,onFail};
+  inputVersion++;
+  saveQueue.push(job);
+  try { persistOutbox(); }
+  catch {
+    saveQueue.pop();
+    if (onFail) onFail(new Error('Browser storage is full or unavailable. Input was not saved.'));
+    syncProblem = 'Browser storage unavailable. Free space before entering more inputs.';
+    updateSyncStatus(); return;
   }
-  if (savesPaused) {
-    if (onFail) onFail(new Error('Saves are paused because the Apps Script endpoint is unavailable.'));
-    return;
+  // Clear accepted input immediately, including while offline.
+  const card = document.querySelector('.stat-card[data-key="'+payload.category+'"]');
+  if (payload.action === 'stat' && card) {
+    card.querySelectorAll('.quality-fp,.quality-mp').forEach(box => { box.checked = false; });
+    const note = card.querySelector('.ql-comment-input');
+    if (note) note.value = '';
   }
-  saveQueue.push({ payload, onSuccess, onFail });
+  updateSyncStatus();
   processSaveQueue();
 }
-
 async function processSaveQueue() {
-  if (queueRunning || !saveQueue.length) return;
-
+  if (queueRunning || !currentUser || !saveQueue.length || syncProblem) return;
+  clearTimeout(retryTimer);
+  if (!navigator.onLine) { updateSyncStatus(); return; }
   queueRunning = true;
-
-  const job = saveQueue.shift();
-
+  const job = saveQueue[0], user = currentUser;
+  updateSyncStatus();
+  let retry = false;
   try {
     const result = await postToScript(job.payload);
-
-    // Apps Script reports application failures as JSON, not HTTP errors.
-    // Treat those exactly like transport failures so optimistic UI changes
-    // are rolled back instead of being reported as saved.
-    if (result && result.error) {
-      throw new Error(result.error);
-    }
-
-    if (job.onSuccess) {
-      job.onSuccess(result);
-    }
-
+    if (currentUser !== user) return;
+    if (job.onSuccess) job.onSuccess(result);
+    saveQueue.shift();
+    try { persistOutbox(job.payload.requestId); }
+    catch { syncProblem = 'Synced, but browser storage could not be updated. Keep this page open.'; }
   } catch (err) {
-    console.error('Save failed:', err);
-
-    if (job.onFail) {
-      job.onFail(err);
-    }
-
-    if (isFatalApiError(err)) {
-      savesPaused = true;
-      failQueuedSaves(err);
-      showToast('Saves paused — Apps Script deployment is unavailable.', 'error');
-    }
-
+    if (currentUser !== user) return;
+    if (err.application) syncProblem = 'Sync needs attention: '+err.message+'. Pending inputs are kept on this browser.';
+    else retry = true;
   } finally {
     queueRunning = false;
-    processSaveQueue();
+    updateSyncStatus();
+    if (retry) retryTimer = setTimeout(processSaveQueue,15000);
+    else if (!syncProblem && saveQueue.length) processSaveQueue();
+    else if (!syncProblem && currentUser === user && currentUser) fetchMonthlyData();
   }
 }
+window.addEventListener('online', () => { processSaveQueue(); });
+window.addEventListener('offline', updateSyncStatus);
+document.getElementById('retry-saves').addEventListener('click', () => {
+  syncProblem = '';
+  processSaveQueue();
+  updateSyncStatus();
+});
 
 /* ════════════════════════════════════════════════════════════════════
    INIT
@@ -1009,20 +1039,7 @@ async function recordStat(category, delta) {
   result => {
     showToast('Saved ✓', 'success');
 
-    // Clear the QL note after a successful save
-    if (category === 'ql' && delta === 1 && card) {
-      const ta = card.querySelector('.ql-comment-input');
-      if (ta) ta.value = '';
-    }
 
-    // Uncheck Full Pitch and Money Part after a successful input
-    if (cat && cat.quality && delta === 1 && card) {
-      const fp = card.querySelector('.quality-fp');
-      const mp = card.querySelector('.quality-mp');
-
-      if (fp) fp.checked = false;
-      if (mp) mp.checked = false;
-    }
   },
     err => {
       todayCounts[category] = Math.max(0, (todayCounts[category] || 0) - delta);
@@ -1110,6 +1127,11 @@ function renderNotifications(list = []) {
 
 async function fetchMonthlyData() {
   if (!selectedMonth || !currentUser) return false;
+  if (queueRunning || saveQueue.length || !navigator.onLine) {
+    updateStatCounts(); updateTotalCalls(); renderChart(monthlyData); renderDailyPerformance(); renderQLNotesToday();
+    return false;
+  }
+  const fetchUser = currentUser, fetchVersion = inputVersion;
   showChartState('loading');
 
   try {
@@ -1118,6 +1140,7 @@ async function fetchMonthlyData() {
         .withFailureHandler(error => reject(new Error(error.message || error)))
         .serverMonthlyData(selectedMonth, currentUser);
     });
+    if (currentUser !== fetchUser || fetchVersion !== inputVersion || queueRunning || saveQueue.length) return false;
     if (json.error) throw new Error(json.error);
     const days = json.days || [];
     const qlNotes = json.ql_notes || [];
@@ -1154,6 +1177,7 @@ async function fetchMonthlyData() {
       const todaySnapshot = await new Promise((resolve, reject) => google.script.run
         .withSuccessHandler(resolve).withFailureHandler(reject)
         .serverMonthlyData(todayStr.slice(0, 7), currentUser));
+      if (currentUser !== fetchUser || fetchVersion !== inputVersion) return false;
       if (todaySnapshot.error) throw new Error(todaySnapshot.error);
       todayRow = (todaySnapshot.days || []).find(day => day.date === todayStr) || {};
       qlNotesByDate[todayStr] = (todaySnapshot.ql_notes || []).filter(note => note.date === todayStr);
@@ -1168,6 +1192,7 @@ async function fetchMonthlyData() {
     yesterdayDate.setDate(yesterdayDate.getDate() - 1);
     const yesterday = yesterdayDate.getFullYear() + '-' + String(yesterdayDate.getMonth()+1).padStart(2,'0') + '-' + String(yesterdayDate.getDate()).padStart(2,'0');
     const previousData = yesterday.slice(0,7) === selectedMonth ? {days:monthlyData} : await new Promise((resolve,reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).serverMonthlyData(yesterday.slice(0,7),currentUser));
+    if (currentUser !== fetchUser || fetchVersion !== inputVersion) return false;
     if (previousData.error) throw new Error(previousData.error);
     const previousRow = (previousData.days || []).find(day => day.date === yesterday) || {};
     inputYesterdayCalls = CATEGORIES.reduce((sum,c) => sum + (Number(previousRow[c.key]) || 0),0);
@@ -1176,11 +1201,13 @@ async function fetchMonthlyData() {
     renderChart(monthlyData);
     renderDailyPerformance();
     renderQLNotesToday();
+    persistOutbox();
     return true;
 
   } catch (err) {
-    showChartState('empty');
-    showToast('Failed to load data — check your Supabase setup.', 'error');
+    if (currentUser !== fetchUser || fetchVersion !== inputVersion) return false;
+    updateStatCounts(); updateTotalCalls(); renderChart(monthlyData); renderDailyPerformance(); renderQLNotesToday();
+    showToast('Server unavailable. Showing locally stored inputs.', 'info');
     return false;
   }
 }

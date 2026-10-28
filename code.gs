@@ -459,7 +459,7 @@ function doPost(e) {
   try {
     var body   = JSON.parse(e.postData.contents);
     var action = body.action;
-    if (['chatUnread', 'chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
+    if (['chatRead', 'chatUnread', 'chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
     if (action === 'editQLNote') return editQLNote_(body);
 
     // ── Register ─────────────────────────────────────────────────
@@ -1309,13 +1309,14 @@ function chatSheet_() {
   var sheet = ss.getSheetByName('Chat_Messages');
   if (!sheet) {
     sheet = ss.insertSheet('Chat_Messages');
-    sheet.appendRow(['ID', 'Sender', 'Recipient', 'Text', 'CreatedAt', 'ExpiresAt']);
+    sheet.appendRow(['ID', 'Sender', 'Recipient', 'Text', 'CreatedAt', 'ExpiresAt', 'ReadBy']);
     sheet.setFrozenRows(1);
   }
+  if (!sheet.getRange(1, 7).getValue()) sheet.getRange(1, 7).setValue('ReadBy');
   return sheet;
 }
 function chatRows_(sheet) {
-  return sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues() : [];
+  return sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues() : [];
 }
 function chatVisible_(row, user, peer, now) {
   if (Number(row[5]) <= now) return false;
@@ -1335,6 +1336,18 @@ function chatRequest_(body) {
     var now = Date.now();
     var sheet = chatSheet_();
     var rows = chatRows_(sheet);
+    if (body.action === 'chatRead') {
+      var ids = Array.isArray(body.ids) ? body.ids.map(String).slice(0, 10000) : [];
+      rows.forEach(function(row, index) {
+        if (ids.indexOf(String(row[0])) === -1 || !chatVisible_(row, user, peer, now) || String(row[1]) === user) return;
+        var readers = row[6] ? JSON.parse(String(row[6])) : [];
+        if (readers.indexOf(user) === -1) {
+          readers.push(user);
+          sheet.getRange(index + 2, 7).setValue(JSON.stringify(readers));
+        }
+      });
+      return jsonResponse({success:true});
+    }
     if (body.action === 'chatUnread') {
       return jsonResponse({messages: rows.filter(function(row) {
         return Number(row[5]) > now && String(row[1]) !== user && (!row[2] || String(row[2]) === user);
@@ -1390,7 +1403,7 @@ function chatRequest_(body) {
       if (startIndex >= 0) { windowRows = visible.slice(startIndex); hasMore = startIndex > 0; }
     }
     var messages = windowRows.map(function(row) {
-      return {id: String(row[0]), sender: String(row[1]), text: String(row[3]), createdAt: Number(row[4]), expiresAt: Number(row[5])};
+      return {id: String(row[0]), sender: String(row[1]), text: String(row[3]), createdAt: Number(row[4]), expiresAt: Number(row[5]), readBy: row[6] ? JSON.parse(String(row[6])) : []};
     });
     // Reveal only the current user's own private conversation partners.
     var partners = {};

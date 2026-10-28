@@ -454,6 +454,9 @@ function restoreOutbox() {
 function updateSyncStatus() {
   const el = document.getElementById('save-status');
   if (!el) return;
+  const retryButton = document.getElementById('retry-saves');
+  retryButton.disabled = queueRunning || !saveQueue.length;
+  retryButton.textContent = queueRunning ? 'Syncing inputs...' : 'Retry pending inputs';
   el.textContent = syncProblem || (saveQueue.length ? saveQueue.length+' input(s) stored locally - '+(queueRunning ? 'syncing...' : 'waiting to sync') : 'All inputs synced');
 }
 function queueSave(payload, onSuccess, onFail) {
@@ -476,6 +479,7 @@ function queueSave(payload, onSuccess, onFail) {
     if (note) note.value = '';
   }
   updateSyncStatus();
+  showToast(navigator.onLine ? 'Input saved locally. Syncing...' : 'Input saved locally. Waiting for connection.', 'info');
   processSaveQueue();
 }
 async function processSaveQueue() {
@@ -489,13 +493,16 @@ async function processSaveQueue() {
   try {
     const result = await postToScript(job.payload);
     if (currentUser !== user) return;
-    if (job.onSuccess) job.onSuccess(result);
     saveQueue.shift();
     try { persistOutbox(job.payload.requestId); }
     catch { syncProblem = 'Synced, but browser storage could not be updated. Keep this page open.'; }
+    // Display callbacks must not block acknowledgement of saved requests.
+    try { if (job.onSuccess) job.onSuccess(result); else showToast('Input synced', 'success'); }
+    catch (error) { console.error('Saved input display failed', error); }
   } catch (err) {
     if (currentUser !== user) return;
-    if (err.application) syncProblem = 'Sync needs attention: '+err.message+'. Pending inputs are kept on this browser.';
+    const temporary = /timed?\s*out|timeout|lock|try again|service unavailable|too many times|internal error/i.test(err.message || '');
+    if (err.application && !temporary) syncProblem = 'Sync needs attention: '+err.message+'. Pending inputs are kept on this browser.';
     else retry = true;
   } finally {
     queueRunning = false;
@@ -507,6 +514,8 @@ async function processSaveQueue() {
 }
 window.addEventListener('online', () => { processSaveQueue(); });
 window.addEventListener('offline', updateSyncStatus);
+window.addEventListener('focus', () => processSaveQueue());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) processSaveQueue(); });
 document.getElementById('retry-saves').addEventListener('click', () => {
   syncProblem = '';
   processSaveQueue();
@@ -1769,7 +1778,8 @@ function renderChatMessages() {
     return `<article class="chat-message ${own ? 'chat-own' : ''}">
       <div class="chat-message-header"><strong>${escapeHtml(formatUsername(message.sender))}</strong>
       <time datetime="${new Date(message.createdAt).toISOString()}" title="Expires ${escapeHtml(new Date(message.expiresAt).toLocaleString())}">${escapeHtml(new Date(message.createdAt).toLocaleString())}</time></div>
-      <p>${escapeHtml(message.text)}</p><div class="chat-message-actions">${own
+      <p>${escapeHtml(message.text)}</p>
+      <span class="chat-read-info" tabindex="0">${(message.readBy || []).length ? 'Read by ' + message.readBy.length : 'Not read yet'}<span class="chat-read-tooltip" role="tooltip">${escapeHtml((message.readBy || []).map(formatUsername).join(', ') || 'No readers yet')}</span></span><div class="chat-message-actions">${own
         ? `<button type="button" data-chat-recall="${escapeHtml(message.id)}">Recall</button>`
         : `<button type="button" data-chat-private="${escapeHtml(message.sender)}">Message privately</button>`}</div></article>`;
   }).join('') : '<p class="chat-empty">No messages yet. Start the conversation.</p>';
@@ -1801,6 +1811,10 @@ async function refreshChat(older = false) {
     markChatRead(result.messages);
     refreshUnreadChat();
     renderChatMessages();
+    if (!document.hidden && result.messages.length) {
+      postToScript({action:'chatRead', token:chatToken, peer:chatPeer, ids:result.messages.map(message => message.id)})
+        .catch(error => console.warn('Read receipts will retry on refresh', error));
+    }
     const select = document.getElementById('chat-peer');
     select.innerHTML = '<option value="">Choose a user</option>' + result.users.map(user =>
       `<option value="${escapeHtml(user)}">${escapeHtml(formatUsername(user))}</option>`).join('');

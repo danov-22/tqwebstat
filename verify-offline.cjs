@@ -9,7 +9,7 @@ function browser(user = 'Alice') {
   const context = {currentUser:user, todayCounts:{vm:1}, monthlyData:[], qlNotesByDate:{},
     todayISO:()=> '2026-10-28', emptyCounts:()=>({}), crypto:require('crypto'),
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>{if(failStorage)throw Error('quota');storage.set(key,value);}},
-    document:{getElementById:()=>({addEventListener(){},textContent:''}),querySelector:()=>null},
+    showToast(){}, console, document:{addEventListener(){},getElementById:()=>({addEventListener(){},textContent:''}),querySelector:()=>null},
     navigator:{onLine:false},window:{addEventListener(){}},setTimeout:()=>1,clearTimeout(){},
     fetchMonthlyData(){}, postToScript:async payload=>{requests.push(payload);if(fail)throw Error('network');return {success:true};}
   };
@@ -43,6 +43,18 @@ async function run() {
   assert.equal(vm.runInContext('saveQueue.length',c),1);
   assert.match(vm.runInContext('syncProblem',c),/needs attention/);
 
+  storage.clear();
+  c=browser(); c.navigator.onLine=true; c.postToScript=async()=>({success:true});
+  vm.runInContext("queueSave({action:'stat',username:currentUser},()=>{throw Error('UI failure')});",c);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('saveQueue.length',c),0);
+  assert.equal(JSON.parse(storage.get('tq_outbox_v1:alice')).jobs.length,0);
+  c=browser(); c.navigator.onLine=true;
+  c.postToScript=async()=>{const err=Error('Service timed out');err.application=true;throw err;};
+  vm.runInContext("queueSave({action:'stat',username:currentUser});",c);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('saveQueue.length',c),1);
+  assert.equal(vm.runInContext('syncProblem',c),'');
   const source=fs.readFileSync('code.gs','utf8');
   const wrapper=source.slice(source.indexOf('function serverRequest('),source.indexOf('\nfunction serverMonthlyData'));
   const rows=[];let mutations=0;

@@ -68,3 +68,13 @@ The save status distinguishes pending local inputs from synced inputs. A validat
 Google Apps Script serves the app shell remotely, so opening/reloading the app without a connection is not supported. Keep the tab open during an outage. Browser local storage is temporary device-local storage, not a backup, and cannot synchronize across devices until connectivity returns.
 
 Run `node verify-offline.cjs` and `node verify-features.cjs`. After deployment, disconnect an already-open tab, add calls with FP/MP and a lead note, reconnect, and verify the exact totals in Sheets. Also test a reload with pending inputs, storage-disabled behavior, and a second username.
+
+## Floating sync status, larger favicon, and reader names
+
+Update all four Apps Script files: [code.gs](./code.gs), `index` from [appscript_index.html](./appscript_index.html), `script` from [script.html](./script.html), and `style` from [style.html](./style.html). Save and deploy a new version on the existing URL. Publish the static favicon assets and updated static HTML pages too. The Apps Script PNG favicon keeps its direct URL for compatibility; cached icons may require closing and reopening the tab.
+
+Sync status and **Retry pending inputs** now float at the bottom left across app sections. Input acceptance shows immediate local-save feedback; confirmed server saves show a success notification. Temporary server timeouts and lock failures retry automatically. Returning to the tab also resumes pending work. Validation failures keep pending inputs and require attention before manual retry. An error in a success display callback no longer leaves a confirmed input queued.
+
+Chat messages show **Read by N** with reader names on hover or keyboard focus. Opening a conversation in a visible tab acknowledges its fetched messages; this indicates the conversation was opened, not that each message was individually inspected. Reader names update on the next chat refresh, normally within 10 seconds. Receipts are stored with each message in a new automatically initialized `ReadBy` column and expire or disappear with the message. Existing messages have no historical reader information. Private receipts are restricted to the conversation participants.
+
+Verification: run `node verify-offline.cjs` and `node verify-features.cjs`. Live checks after deployment: add an input offline, reconnect and confirm the notice returns to **All inputs synced**; switch sections and verify the floating notice remains; use two accounts to read public and private messages and hover over their reader counts.

@@ -1122,4 +1122,14 @@ body {
 .chat-badge[hidden]{display:none}
 .notification-banner strong,.notification-banner p{font-size:1rem;line-height:1.6}
 .site-logo{display:block;flex-shrink:0;object-fit:contain;border-radius:8px}.auth-brand-image{margin:0 auto 16px}
+
+.sync-notification { position:fixed;left:16px;bottom:16px;z-index:190;max-width:min(350px,calc(100vw - 32px));padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.22); }
+.sync-notification p { margin:0 0 8px;font-size:.95rem;overflow-wrap:anywhere; }
+.sync-notification button { width:100%; }
+.sync-notification button:disabled { opacity:.65;cursor:default; }
+.app { padding-bottom:150px; }
+.chat-read-info { display:inline-block;position:relative;color:var(--muted);font-size:.85rem;cursor:help;margin-bottom:8px; }
+.chat-read-tooltip { display:none;position:absolute;bottom:100%;left:0;z-index:10;min-width:150px;max-width:250px;padding:8px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.2);overflow-wrap:anywhere; }
+.chat-read-info:hover .chat-read-tooltip,.chat-read-info:focus .chat-read-tooltip { display:block; }
+@media(max-width:560px) { .toast { bottom:145px; } }
 </style>

@@ -59,6 +59,8 @@ let uuidCounter = 0;
 const chatSheet = {
  getLastRow:()=>chatData.length+1, getMaxRows:()=>10000,
  getRange:(r,c,n,w)=>({
+   getValue:()=>r===1?'ReadBy':chatData[r-2][c-1],
+   setValue:value=>{if(r>1)chatData[r-2][c-1]=value;},
    getValues:()=>chatData.slice(r-2,r-2+n).map(row=>row.slice(c-1,c-1+w)),
    setValues:values=>values.forEach((row,i)=>chatData[r-2+i]=row.slice()),
    setRichTextValue:value=>chatData[r-2][c-1]=value
@@ -90,6 +92,19 @@ assert.equal(request(bobToken,'chatUnread').messages.length,2);
 assert.equal(request(aliceToken,'chatUnread').messages.length,0);
 assert.equal(request(eveToken,'chatUnread').messages.length,1);
 assert.throws(()=>request('forged','chatUnread'),/CHAT_AUTH/);
+request(eveToken,'chatRead',{peer:'alice',ids:['private-message-001'],username:'bob'});
+assert.equal(chatData[1][6],undefined);
+request(bobToken,'chatRead',{peer:'alice',ids:['private-message-001']});
+request(bobToken,'chatRead',{peer:'alice',ids:['private-message-001']});
+assert.deepEqual(JSON.parse(chatData[1][6]),['bob']);
+assert.deepEqual(Array.from(request(aliceToken,'chatList',{peer:'bob'}).messages[0].readBy),['bob']);
+request(aliceToken,'chatRead',{ids:['public-message-0001']});
+assert.equal(chatData[0][6],undefined); // Authors are not readers.
+request(bobToken,'chatRead',{ids:['public-message-0001']});
+request(eveToken,'chatRead',{ids:['public-message-0001']});
+assert.deepEqual(JSON.parse(chatData[0][6]),['bob','eve']);
+assert.throws(()=>request('forged','chatRead',{ids:['public-message-0001']}),/CHAT_AUTH/);
+console.log('Passed: persistent reader names, duplicate receipts, author exclusion, private receipt isolation and authenticated reads.');
 chatData[1][5]=Date.now()-1;
 assert.equal(request(bobToken,'chatList',{peer:'alice'}).messages.length,0);
 chatContext.cleanupExpiredChat(); assert.equal(chatData.length,1);

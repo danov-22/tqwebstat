@@ -102,3 +102,41 @@ Update all four Apps Script files together: backend `code.gs`, HTML `index` from
 `Unknown action: getExtendedNotes` indicates that the deployed backend does not have the notes update; signing in again cannot install it. Notes now use the dedicated `serverExtendedNotes` RPC and display a deployment-specific message if it is unavailable. Use **Reload saved notes** to retry after a connection issue. The `Extended_Notes` tab is created automatically on the first authenticated load; existing server notes are preserved.
 
 Country clocks now separate a prominent country heading and large live time from the date and UTC offset. Country labels and Remove buttons no longer contain corrupted question marks. Navigation stays in the order Overview, Input, Notes, Timezones, Chat on one row, with horizontal scrolling on small screens. **Edit daily inputs** starts collapsed; click its heading to expand or collapse the editor.
+
+
+## November 5: manual input, public clocks, and office sync recovery
+
+### Deploy together
+
+1. Replace the Apps Script backend with [code.gs](./code.gs).
+2. Replace HTML `index`, `script`, and `style` with [appscript_index.html](./appscript_index.html), [script.html](./script.html), and [style.html](./style.html).
+3. **Create an additional Apps Script HTML file named `timezone`** and paste [timezone.html](./timezone.html) into it. This is the self-contained shared clock module and styles.
+4. Save, then Deploy > Manage deployments > Edit > New version > Deploy on the existing URL. Reload the app on both computers. The client and backend diagnostic version is `2026-11-05-world-clocks`.
+5. Publish the static repository changes to the existing web host: [index.html](./index.html), [portal.css](./portal.css), [timezone.js](./timezone.js), [timezone.css](./timezone.css), and [timezones/index.html](./timezones/index.html). The public route is `/timezones/`; it needs no login or Apps Script connection.
+
+The clock source is shared: after editing `timezone.js` or `timezone.css`, run `node sync-timezone-assets.cjs` to regenerate the Apps Script `timezone.html` bundle. Do not edit the generated bundle separately.
+
+### Input method and clocks
+
+Input has a per-user **Input method** selector: Buttons or Manual. Manual fields edit today's totals with **Save total**; adjustments still enter the durable save/undo queue and keep the usual lead-note and pitch-flag behavior. For added qualified leads, the typed lead note applies to the first added lead and the rest have blank notes. Reducing qualified leads removes the latest notes. Large changes queue multiple requests and can take time to sync.
+
+More than 80 country/city choices include Bulgaria, Croatia, Czechia, Latvia, Lithuania, Iceland, Austria, Malta, and other European countries. Selected cards group by their current UTC offset, including daylight saving and fractional offsets. Cards show a flag, country-color stripe/tint, country name, and large live clock. Flag images load from FlagCDN; country-code fallbacks and color palettes remain if images are blocked. Existing saved clock choices keep their original IDs.
+
+Enable **Show floating clocks across pages** in the workspace Timezones page to see a compact grouped panel while entering inputs. **Hide** turns it off. Selections and floating preferences remain browser-local, per user in the workspace. Public page selections use separate browser storage.
+
+### Office sync: what was fixed and what to check
+
+Two reproducible code failures are fixed:
+
+- A blocked Chart.js CDN used to throw while updating the chart before the input reached the queue. Charts are now optional: input storage and sync continue when the chart library is unavailable.
+- A pre-write lock timeout could be cached in an input receipt, so the same ID kept returning that old error. Confirmed pre-write lock failures now retry with the original request ID. Successful receipts still prevent duplicates; ambiguous interrupted receipts and payload conflicts remain blocked for reconciliation.
+
+The client also supports browsers without `crypto.randomUUID`, shows the last save failure, waits up to 55 seconds for the server, and allows an explicit Retry/Check to attempt syncing even if the browser's offline indicator is stale.
+
+From home, deploy the complete version above. Pending entries on the office browser are **not accessible from the home laptop** until exported or synced. At the office, open footer **Sync help and recovery > Check connection**. It reports RPC connectivity and backend version; it does not claim to test write permissions. If it reaches the server, Retry pending inputs checks actual saving. If the version is old, reload the current deployment. If it times out or fails only on the office computer, compare Google sign-in/account access, browser extensions, third-party cookie/site settings for Apps Script, and company filtering of `script.google.com` / `script.googleusercontent.com`. A company restriction requires the office IT administrator; a home code change cannot remove it.
+
+If blocked, use **Export pending inputs + diagnostics** at the office, then bring the JSON file home. Sign in as the same Webstat username, finish syncing any home entries, and use **Import recovery file**. Original request IDs are retained, so already-committed requests return their saved receipts rather than adding duplicates. Recovery files contain pending input data and diagnostic errors, not passwords or session tokens. Keep the office browser data until its pending entries have been confirmed on the server. This cannot recover entries that never reached browser storage in an older app version.
+
+For a request-ID conflict or interrupted receipt, inspect the reported request in `Input_Receipts`; do not generate a fresh ID or delete receipts blindly. These may represent a mutation whose outcome needs checking.
+
+Validation: `node verify-features.cjs`, `node verify-offline.cjs`, `node verify-workspace-edits.cjs`, and `node verify-timezones.cjs`. Local browser checks cover manual entry with the chart CDN absent, flag cards, timezone grouping, floating clocks across pages, public navigation, and mobile layout. The actual office connection has not been tested.

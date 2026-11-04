@@ -264,7 +264,7 @@
           </div>
         </div>
       </section>
-      <section class="card" id="timezones-card"><h2 class="section-title">Timezones</h2><p>Choose countries and cities. Clocks are arranged by current UTC offset.</p><section class="world-clocks"><h3>World clocks</h3><label for="clock-country">Add a country / city</label><select id="clock-country"></select><button type="button" class="sync-btn" id="clock-add">Add clock</button><div id="clock-list"></div></section></section>
+      <section class="card" id="timezones-card"><h2 class="section-title">Timezones</h2><div id="workspace-timezones"></div></section>
       <section class="card" id="personal-notes-card">
         <h2 class="section-title"><label for="personal-notes">Personal notes</label></h2>
         <p>Keep ongoing notes here. Saved automatically on this device and browser for your username. Clearing browser data removes these notes.</p>
@@ -276,6 +276,8 @@
         <button type="button" class="sync-btn" id="save-extended-notes">Save extended notes</button><p id="extended-notes-status" role="status"></p>
       </section>
       <section class="card" id="input-performance-card">
+        <div class="input-mode-control"><label for="input-mode">Input method</label><select id="input-mode"><option value="buttons">Buttons - click to add or undo</option><option value="manual">Manual - type today's totals</option></select></div>
+        <p id="input-mode-hint">Click a status button to add one input.</p>
         <div class="input-call-totals"><div>Yesterday<strong id="input-yesterday-calls">?</strong></div><div>Today<strong id="input-today-calls">0</strong></div></div>
         <div class="chart-header"><h2 class="section-title">Today's performance</h2><span id="input-performance-date"></span></div>
         <div class="daily-summary" aria-live="polite">
@@ -291,6 +293,13 @@
       <aside class="sync-notification" aria-label="Input sync">
         <p id="save-status" role="status" aria-live="polite">Checking saved inputs...</p>
         <button type="button" class="sync-btn" id="retry-saves">Retry pending inputs</button>
+        <details class="sync-tools"><summary>Sync help and recovery</summary>
+          <p>Pending inputs belong to this browser until the server confirms them. If this computer cannot connect, export them and import the file on your home computer using the same username.</p>
+          <button type="button" class="sync-btn" id="check-sync">Check connection</button>
+          <button type="button" class="sync-btn" id="export-pending">Export pending inputs + diagnostics</button>
+          <label for="import-pending">Import recovery file</label><input type="file" id="import-pending" accept="application/json,.json">
+          <p id="sync-diagnostics" role="status"></p>
+        </details>
       </aside>
         <div class="eye-footer-control">
           <button class="eye-break-button" id="ball-menu-trigger" aria-label="Open eye break controls" aria-expanded="false">
@@ -313,6 +322,7 @@
   <!-- Toast -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <?!= include('timezone'); ?>
   <?!= include('script'); ?>
 </body>
 </html>

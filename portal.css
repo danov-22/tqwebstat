@@ -26,3 +26,10 @@ footer{color:var(--muted)}
 [data-theme="light"] .badge.live{color:#166534;background:#dcfce7}
 .choice:hover .choice-top b{color:#fff}
 @media(max-width:400px){.header-actions{gap:8px}.theme-toggle{padding:8px 10px}}
+
+.choices{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.timezone-visual{display:flex;flex-direction:column;justify-content:center;gap:28px;background:radial-gradient(ellipse at top,#2563eb25,transparent 75%)}
+.timezone-visual>strong{font:900 clamp(28px,3.2vw,44px)/1 system-ui,sans-serif;letter-spacing:-.05em;color:var(--text)}
+.timezone-preview-times{display:flex;justify-content:center;gap:20px;color:var(--muted);font-size:10px;letter-spacing:.08em}
+.timezone-preview-times b{display:block;font-size:20px;color:var(--text);margin-top:7px;letter-spacing:0;font-variant-numeric:tabular-nums}
+@media(max-width:960px){.choices{grid-template-columns:1fr}.timezone-visual>strong{font-size:50px}}

@@ -436,15 +436,19 @@ function serverRequest(payload) {
     var fingerprint = JSON.stringify(payload);
     var user = String(payload.username || '').trim().toLowerCase();
     var rows = receipts.getLastRow() > 1 ? receipts.getRange(2,1,receipts.getLastRow()-1,4).getValues() : [];
+    var retryRow = 0;
     for (var i=0;i<rows.length;i++) {
       if (String(rows[i][0]) !== payload.requestId) continue;
       if (String(rows[i][1]) !== user || !sameInputPayload_(String(rows[i][2]), payload)) return {error:'Input request ID conflict.'};
       if (!rows[i][3]) return {error:'An earlier sync was interrupted. Ask the admin to reconcile request '+payload.requestId+' in Input_Receipts before retrying'};
-      return JSON.parse(String(rows[i][3]));
+      var savedResult = JSON.parse(String(rows[i][3]));
+      // These failures occur before acquiring the mutation lock, so no input was applied.
+      if (savedResult.retryable === true || (savedResult.error && /Lock timeout: another process was holding the lock/i.test(savedResult.error))) {retryRow=i+2;break;}
+      return savedResult;
     }
     // Record intent first. An interrupted execution requires reconciliation,
     // rather than risking replay of an input that might already be committed.
-    var row = receipts.getLastRow()+1;
+    var row = retryRow || receipts.getLastRow()+1;
     receipts.getRange(row,1,1,4).setValues([[payload.requestId,user,fingerprint,'']]);
     SpreadsheetApp.flush();
     var result = invoke();
@@ -519,7 +523,7 @@ function doPost(e) {
       }
 
       var undoLock = LockService.getScriptLock();
-      undoLock.waitLock(10000);
+      try {undoLock.waitLock(10000);} catch (error) {return jsonResponse({error:'Input server busy. Try again.',retryable:true});}
       try {
         var undoSheets = ensureSheets();
         var undoStats = undoSheets.statsSheet;
@@ -913,7 +917,7 @@ if (action === 'login') {
     }
 
     var undoLock = LockService.getScriptLock();
-    undoLock.waitLock(10000);
+    try {undoLock.waitLock(10000);} catch (error) {return jsonResponse({error:'Input server busy. Try again.',retryable:true});}
 
     try {
       var undoSheets = ensureSheets();
@@ -1033,7 +1037,7 @@ if (action === 'login') {
 // ── Record stat ───────────────────────────────────────────────
 if (action === 'stat') {
   var statLock = LockService.getScriptLock();
-  statLock.waitLock(10000);
+  try {statLock.waitLock(10000);} catch (error) {return jsonResponse({error:'Input server busy. Try again.',retryable:true});}
   try {
 
   var date      = String(body.date     || '').trim();
@@ -1504,4 +1508,15 @@ function serverExtendedNotes(payload) {
   try {
     return JSON.parse(workspaceEdit_(payload).getContent());
   } catch (error) { return {error:error.message || String(error)}; }
+}
+
+// Read-only diagnostic: confirms RPC access and spreadsheet readability, not a write.
+function serverSyncHealth(token) {
+  try {
+    chatUser_(token);
+    var sheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(STATS_SHEET);
+    if(!sheet) return {error:'Stats sheet is missing.'};
+    sheet.getLastRow();
+    return {version:'2026-11-05-world-clocks',serverTime:new Date().toISOString(),storageAccessible:true};
+  } catch(error) {return {error:error.message || String(error)};}
 }

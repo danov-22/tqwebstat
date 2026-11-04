@@ -362,6 +362,8 @@ function doLogout() {
   document.getElementById('personal-notes').value = '';
   document.getElementById('extended-notes').value = '';
   extendedNotesLoading = false;
+  if (workspaceClockController) workspaceClockController.destroy();
+  workspaceClockController = null; workspaceClockUser = '';
   currentUser = null;
   try { localStorage.removeItem('tq_user'); } catch {}
   appPage.classList.remove('visible');
@@ -411,15 +413,17 @@ showAppPage('overview');
 
 async function postToScript(payload) {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Server response timed out')),30000);
+    const timeout = setTimeout(() => reject(new Error('Server response timed out. The request may still finish; retry keeps the same input ID.')),55000);
+    try {
     google.script.run
       .withSuccessHandler(result => {
         clearTimeout(timeout);
-        if (result && result.error) { const error = new Error(result.error); error.application = true; reject(error); }
+        if (result && result.error) { const error = new Error(result.error); error.application = true; error.retryable = !!result.retryable; reject(error); }
         else resolve(result || { success: true });
       })
       .withFailureHandler(error => { clearTimeout(timeout); reject(new Error(error.message || error)); })
       .serverRequest(payload);
+    } catch (error) { clearTimeout(timeout); reject(error); }
   });
 }
 
@@ -429,6 +433,7 @@ const saveQueue = [];
 let queueRunning = false;
 let retryTimer;
 let syncProblem = '';
+let syncLastError = '', syncLastSuccess = '', syncLastAttempt = '', syncConnectionReport = '';
 let inputVersion = 0;
 const offlineKey = user => 'tq_outbox_v1:' + user.toLowerCase().trim();
 function persistOutbox(acknowledgedId) {
@@ -443,7 +448,7 @@ function persistOutbox(acknowledgedId) {
 }
 function restoreOutbox() {
   saveQueue.length = 0;
-  syncProblem = '';
+  syncProblem = ''; syncLastError = '';
   try {
     const saved = JSON.parse(localStorage.getItem(offlineKey(currentUser)) || '{}');
     saveQueue.push(...(saved.jobs || []));
@@ -462,11 +467,14 @@ function updateSyncStatus() {
   const retryButton = document.getElementById('retry-saves');
   retryButton.disabled = queueRunning || !saveQueue.length;
   retryButton.textContent = queueRunning ? 'Syncing inputs...' : 'Retry pending inputs';
-  el.textContent = syncProblem || (saveQueue.length ? saveQueue.length+' input(s) stored locally - '+(queueRunning ? 'syncing...' : 'waiting to sync') : 'All inputs synced');
+  el.textContent = syncProblem || (saveQueue.length ? saveQueue.length+' input(s) stored locally - '+(queueRunning ? 'syncing...' : 'waiting to sync') + (syncLastError ? '. Last error: '+syncLastError : '') : 'All inputs synced');
 }
 function queueSave(payload, onSuccess, onFail) {
   if (!currentUser || !payload.username) { if (onFail) onFail(new Error('Please sign in again.')); return; }
-  const job = {payload:{...payload,requestId:crypto.randomUUID()},onSuccess,onFail};
+  let requestId;
+  try {requestId=newInputRequestId();}
+  catch(error){if(onFail)onFail(error);syncProblem='This browser cannot create secure input IDs. Update the browser before entering inputs.';updateSyncStatus();return;}
+  const job = {payload:{...payload,requestId},onSuccess,onFail};
   inputVersion++;
   saveQueue.push(job);
   try { persistOutbox(); }
@@ -487,17 +495,24 @@ function queueSave(payload, onSuccess, onFail) {
 
   processSaveQueue();
 }
-async function processSaveQueue() {
+function newInputRequestId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);crypto.getRandomValues(bytes);
+  return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function processSaveQueue(force = false) {
   if (queueRunning || !currentUser || !saveQueue.length || syncProblem) return;
   clearTimeout(retryTimer);
-  if (!navigator.onLine) { updateSyncStatus(); return; }
+  if (!navigator.onLine && !force) { updateSyncStatus(); return; }
   queueRunning = true;
   const job = saveQueue[0], user = currentUser;
+  syncLastAttempt = new Date().toISOString();
   updateSyncStatus();
   let retry = false;
   try {
     const result = await postToScript(job.payload);
     if (currentUser !== user) return;
+    syncLastError = ''; syncLastSuccess = new Date().toISOString();
     saveQueue.shift();
     try { persistOutbox(job.payload.requestId); }
     catch { syncProblem = 'Synced, but browser storage could not be updated. Keep this page open.'; }
@@ -506,15 +521,16 @@ async function processSaveQueue() {
     catch (error) { console.error('Saved input display failed', error); }
   } catch (err) {
     if (currentUser !== user) return;
-    const temporary = /timed?\s*out|timeout|lock|try again|service unavailable|too many times|internal error/i.test(err.message || '');
+    syncLastError = err.message || String(err);
+    const temporary = !!err.retryable || /timed?\s*out|timeout|lock|try again|service unavailable|too many times|internal error/i.test(err.message || '');
     if (err.application && !temporary) syncProblem = 'Sync needs attention: '+err.message+'. Pending inputs are kept on this browser.';
     else retry = true;
   } finally {
     queueRunning = false;
     updateSyncStatus();
-    if (retry) retryTimer = setTimeout(processSaveQueue,15000);
-    else if (!syncProblem && saveQueue.length) processSaveQueue();
-    else if (!syncProblem && currentUser === user && currentUser) fetchMonthlyData();
+    if (retry) retryTimer = setTimeout(() => processSaveQueue(true),15000);
+    else if (!syncProblem && saveQueue.length) processSaveQueue(force);
+    else if (!syncProblem && currentUser === user && currentUser) fetchMonthlyData(force);
   }
 }
 window.addEventListener('online', () => { processSaveQueue(); });
@@ -523,13 +539,69 @@ window.addEventListener('focus', () => processSaveQueue());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) processSaveQueue(); });
 document.getElementById('retry-saves').addEventListener('click', () => {
   syncProblem = '';
-  processSaveQueue();
+  processSaveQueue(true);
   updateSyncStatus();
 });
 
 /* ════════════════════════════════════════════════════════════════════
    INIT
    ════════════════════════════════════════════════════════════════════ */
+const SYNC_CLIENT_VERSION = '2026-11-05-world-clocks';
+function syncReport() {
+  return {format:'tq-input-recovery-v1',version:SYNC_CLIENT_VERSION,username:currentUser,createdAt:new Date().toISOString(),
+    diagnostics:{online:navigator.onLine,browser:navigator.userAgent,lastError:syncLastError || syncProblem,lastAttempt:syncLastAttempt,lastSuccess:syncLastSuccess,connectionCheck:syncConnectionReport},
+    jobs:saveQueue.map(job=>({payload:job.payload}))};
+}
+function validateRecovery(data, user) {
+  if (!data || data.format!=='tq-input-recovery-v1' || typeof data.username!=='string' || data.username.toLowerCase().trim()!==user.toLowerCase().trim() || !Array.isArray(data.jobs) || data.jobs.length>20000) throw new Error('Choose a Webstat recovery file for your signed-in username.');
+  const allowed=['action','date','username','category','delta','fp','mp','ql_note','requestId'];
+  return data.jobs.map(job=>{
+    const p=job && job.payload;
+    if(!p || Object.keys(p).some(k=>!allowed.includes(k)) || !['stat','undoLastStat','undoLastQL'].includes(p.action) || typeof p.username!=='string' || p.username.toLowerCase().trim()!==user.toLowerCase().trim() || typeof p.requestId!=='string' || !/^[a-zA-Z0-9-]{16,80}$/.test(p.requestId) || typeof p.date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.date) || !Number.isFinite(Date.parse(p.date)) || new Date(p.date).toISOString().slice(0,10)!==p.date) throw new Error('Invalid pending input in recovery file.');
+    if(p.action!=='undoLastQL' && !CATEGORIES.some(c=>c.key===p.category))throw new Error('Unknown category in recovery file.');
+    if(p.action==='stat' && (!Number.isInteger(p.delta) || Math.abs(p.delta)!==1 || typeof p.fp!=='boolean' || typeof p.mp!=='boolean' || typeof p.ql_note!=='string' || p.ql_note.length>280))throw new Error('Invalid input values in recovery file.');
+    return {payload:p};
+  });
+}
+document.getElementById('export-pending').addEventListener('click',()=>{
+  if(!currentUser)return;
+  const blob=new Blob([JSON.stringify(syncReport(),null,2)],{type:'application/json'}), url=URL.createObjectURL(blob), link=document.createElement('a');
+  link.href=url;link.download='webstat-pending-'+todayISO()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+document.getElementById('import-pending').addEventListener('change',async event=>{
+  const file=event.target.files[0], status=document.getElementById('sync-diagnostics');if(!file || !currentUser)return;
+  const user=currentUser;
+  if(queueRunning || saveQueue.length){status.textContent='Finish syncing existing pending inputs before importing a recovery file.';event.target.value='';return;}
+  try {
+    if(file.size>20000000)throw new Error('Recovery file is too large.');
+    const jobs=validateRecovery(JSON.parse(await file.text()),user);
+    if(currentUser!==user)throw new Error('Sign in to the recovery file account again.');
+    if(queueRunning || saveQueue.length)throw new Error('New inputs arrived while reading the file. Sync them first.');
+    const unique=new Map();jobs.forEach(job=>{const old=unique.get(job.payload.requestId);if(old&&JSON.stringify(old.payload)!==JSON.stringify(job.payload))throw new Error('Recovery file contains conflicting request IDs.');unique.set(job.payload.requestId,job);});
+    saveQueue.push(...unique.values());inputVersion++;
+    try {persistOutbox();}catch(error){saveQueue.length=0;throw new Error('Browser storage could not keep the imported inputs.');}
+    syncProblem='';syncLastError='';status.textContent=saveQueue.length+' pending inputs imported. Original IDs are preserved to prevent duplicate saves.';
+    updateSyncStatus();processSaveQueue(true);
+  } catch(error){status.textContent=error.message;}
+  finally {event.target.value='';}
+});
+document.getElementById('check-sync').addEventListener('click',async event=>{
+  const button=event.currentTarget,status=document.getElementById('sync-diagnostics'),user=currentUser;
+  button.disabled=true;status.textContent='Checking the Apps Script connection...';
+  try {
+    const result=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('Connection timed out. The office browser, extension, firewall, or Google access policy may be blocking Apps Script.')),20000);
+      try {google.script.run.withSuccessHandler(value=>{clearTimeout(timer);resolve(value);}).withFailureHandler(error=>{clearTimeout(timer);reject(new Error(error.message || String(error)));}).serverSyncHealth(chatToken);}
+      catch(error){clearTimeout(timer);reject(error);}
+    });
+    if(currentUser!==user)return;
+    if(result.error)throw new Error(result.error);
+    status.textContent='Server reachable. Backend '+result.version+'. '+(result.storageAccessible?'Spreadsheet readable. ':'')+'Client '+SYNC_CLIENT_VERSION+'. Pending: '+saveQueue.length+'. '+(syncLastError?'Last save error: '+syncLastError:'Retry pending inputs to verify saving.');
+    syncConnectionReport=status.textContent;
+    if(saveQueue.length){syncProblem='';processSaveQueue(true);}
+  } catch(error){if(currentUser===user)status.textContent='Check failed: '+error.message+'. Export pending inputs before clearing browser data. If the function is missing, deploy the latest backend.';}
+  finally {syncConnectionReport=status.textContent;button.disabled=false;}
+});
 async function fetchNotifications() {
   try {
     const data = await new Promise((resolve, reject) => {
@@ -548,6 +620,7 @@ function initApp() {
   banner.classList.remove('visible');
 
   renderStatButtons();
+  loadInputMode();
   buildMonthPicker();
 
   // Notifications are optional. Avoid a second request when the dashboard
@@ -719,6 +792,35 @@ function buildMonthPicker() {
 /* ════════════════════════════════════════════════════════════════════
    STAT BUTTONS
    ════════════════════════════════════════════════════════════════════ */
+function loadInputMode() {
+  let mode = 'buttons';
+  try {mode = localStorage.getItem('tq_input_mode:' + currentUser.toLowerCase()) || mode;} catch {}
+  setInputMode(mode);
+}
+function setInputMode(mode) {
+  mode = mode === 'manual' ? 'manual' : 'buttons';
+  document.getElementById('input-mode').value = mode;
+  statsGrid.dataset.inputMode = mode;
+  document.getElementById('input-mode-hint').textContent = mode === 'manual' ? 'Type the total for today and click Save total. Increasing totals adds inputs; decreasing totals undoes the latest entries. Reducing leads removes their latest notes.' : 'Click a status button to add one input. Use Undo to remove the latest entry.';
+}
+document.getElementById('input-mode').addEventListener('change',event=>{
+  setInputMode(event.target.value);
+  try {localStorage.setItem('tq_input_mode:' + currentUser.toLowerCase(),event.target.value);} catch {showToast('Could not save input preference.','error');}
+});
+function applyCategoryTarget(key, value) {
+  const target = Number(value);
+  if (!String(value).trim() || !Number.isInteger(target) || target < 0 || target > 10000) {showToast('Enter a whole number from 0 to 10000.','error');return;}
+  const cat = CATEGORIES.find(c=>c.key===key), card=statsGrid.querySelector('[data-key="'+key+'"]');
+  const fp=card.querySelector('.quality-fp'),mp=card.querySelector('.quality-mp');
+  const flags={fp:!!(fp&&fp.checked),mp:!!(mp&&mp.checked)};
+  const difference=target-(todayCounts[key] || 0);
+  for(let i=0;i<Math.abs(difference);i++) {
+    const before=todayCounts[key] || 0;
+    if(difference>0){if(fp)fp.checked=flags.fp;if(mp)mp.checked=flags.mp;recordStat(key,1);}
+    else if(cat.isQL)undoLastQL();else undoLastStat(key);
+    if((todayCounts[key] || 0)===before)break;
+  }
+}
 function renderStatButtons() {
   statsGrid.innerHTML = '';
 
@@ -812,19 +914,18 @@ function renderStatButtons() {
     const editCount = () => {
       const value = prompt('Set the total for today: ' + cat.label + ' (whole number, 0-10000).' + (cat.isQL ? ' Reducing leads removes the latest notes.' : ''), String(todayCounts[cat.key] || 0));
       if (value === null) return;
-      const target = Number(value);
-      if (!value.trim() || !Number.isInteger(target) || target < 0 || target > 10000) { showToast('Enter a whole number from 0 to 10000.', 'error'); return; }
-      const difference = target - (todayCounts[cat.key] || 0);
-      for (let i = 0; i < Math.abs(difference); i++) {
-        const before = todayCounts[cat.key] || 0;
-        if (difference > 0) recordStat(cat.key, 1);
-        else if (cat.isQL) undoLastQL();
-        else undoLastStat(cat.key);
-        if ((todayCounts[cat.key] || 0) === before) break;
-      }
+      applyCategoryTarget(cat.key, value);
+
     };
     count.addEventListener('click', editCount);
     count.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); editCount(); } });
+    const manual = document.createElement('form');manual.className = 'manual-count-form';
+    const manualLabel = document.createElement('label');manualLabel.htmlFor = 'manual-' + cat.key;manualLabel.textContent = "Today's total";
+    const manualInput = document.createElement('input');manualInput.id = 'manual-' + cat.key;manualInput.type = 'number';manualInput.inputMode = 'numeric';manualInput.min = '0';manualInput.max = '10000';manualInput.step = '1';manualInput.required = true;manualInput.value = todayCounts[cat.key] || 0;manualInput.dataset.manualCount = cat.key;
+    const manualButton = document.createElement('button');manualButton.type = 'submit';manualButton.className = 'sync-btn';manualButton.textContent = 'Save total';
+    manual.append(manualLabel,manualInput,manualButton);
+    manual.addEventListener('submit',event=>{event.preventDefault();applyCategoryTarget(cat.key,manualInput.value);manualInput.value=todayCounts[cat.key] || 0;});
+    (cat.isQL ? card.querySelector('.ql-panel-left') : card).appendChild(manual);
     statsGrid.appendChild(card);
   });
 
@@ -1159,9 +1260,9 @@ function renderNotifications(list = []) {
 
 }
 
-async function fetchMonthlyData() {
+async function fetchMonthlyData(force = false) {
   if (!selectedMonth || !currentUser) return false;
-  if (queueRunning || saveQueue.length || !navigator.onLine) {
+  if (queueRunning || saveQueue.length || (!navigator.onLine && !force)) {
     updateStatCounts(); updateTotalCalls(); renderChart(monthlyData); renderDailyPerformance(); renderQLNotesToday();
     return false;
   }
@@ -1312,6 +1413,13 @@ function isolateMonthlyDataset(event, legendItem, legend) {
 
 function renderChart(data) {
   renderLeadCalendar();
+  // Charts are optional. A blocked CDN must never interrupt saving an input.
+  if (typeof Chart !== 'function') {
+    showChartState('empty');
+    document.getElementById('chart-empty').textContent = 'Charts are unavailable on this connection. Inputs can still be saved and synced.';
+    return;
+  }
+  document.getElementById('chart-empty').textContent = 'No data for this month yet.';
   if (!data || !data.length) { showChartState('empty'); return; }
   showChartState('chart');
 
@@ -1462,6 +1570,7 @@ function renderQLNotesToday() {
 
 /* ── Hover trend chart (FP/MP/QL for the month) ──────────────────── */
 function renderDailyTrendChart() {
+  if (typeof Chart !== 'function') return;
   if (!monthlyData.length) return;
   const labels = monthlyData.map(d => new Date(d.date + 'T00:00:00').getDate());
   const fpData = monthlyData.map(d => Number(d.fp)  || 0);
@@ -1507,6 +1616,7 @@ function renderDailyTrendChart() {
    TOTALS
    ════════════════════════════════════════════════════════════════════ */
 function updateStatCounts() {
+  document.querySelectorAll('[data-manual-count]').forEach(input=>{if(document.activeElement!==input)input.value=todayCounts[input.dataset.manualCount] || 0;});
   ['fp', 'mp', 'ql'].forEach(key => {
     document.getElementById('input-' + key).textContent = todayCounts[key] || 0;
   });
@@ -2024,49 +2134,14 @@ document.getElementById('day-editor-form').addEventListener('submit',async event
   } catch(error) { if(currentUser===user) status.textContent='Could not save: '+error.message; }
   finally { button.disabled=false; }
 });
-const clockCountries = [
- ['United Kingdom','Europe/London'],['France','Europe/Paris'],['Germany','Europe/Berlin'],['Spain','Europe/Madrid'],['Italy','Europe/Rome'],['Portugal','Europe/Lisbon'],['Netherlands','Europe/Amsterdam'],['Greece','Europe/Athens'],['Poland','Europe/Warsaw'],['Finland','Europe/Helsinki'],['Turkey','Europe/Istanbul'],
- ['South Africa','Africa/Johannesburg'],['Egypt','Africa/Cairo'],['Kenya','Africa/Nairobi'],['Nigeria','Africa/Lagos'],['Morocco','Africa/Casablanca'],
- ['Brazil - S\u00e3o Paulo','America/Sao_Paulo'],['Argentina','America/Argentina/Buenos_Aires'],['Chile','America/Santiago'],['Colombia','America/Bogota'],['Peru','America/Lima'],['Venezuela','America/Caracas'],
- ['USA - New York','America/New_York'],['USA - Chicago','America/Chicago'],['USA - Los Angeles','America/Los_Angeles'],['Canada - Toronto','America/Toronto'],['Mexico - Mexico City','America/Mexico_City'],
- ['India','Asia/Kolkata'],['China','Asia/Shanghai'],['Japan','Asia/Tokyo'],['Indonesia - Jakarta','Asia/Jakarta'],['Indonesia - Makassar','Asia/Makassar'],['Philippines','Asia/Manila'],['Singapore','Asia/Singapore'],['UAE','Asia/Dubai'],['Australia - Sydney','Australia/Sydney'],['New Zealand','Pacific/Auckland']
-];
-const clockSelect = document.getElementById('clock-country');
-clockCountries.forEach(([name,zone],i) => { const option = document.createElement('option'); option.value = i; option.textContent = name + ' (' + zone + ')'; clockSelect.appendChild(option); });
-function selectedClocks() {
-  try { const saved = JSON.parse(localStorage.getItem('tq_clocks:' + currentUser.toLowerCase()) || '[0,11,16]'); return Array.isArray(saved) ? saved.filter(i => Number.isInteger(i) && clockCountries[i]) : []; } catch { return []; }
-}
+let workspaceClockController = null, workspaceClockUser = '';
 function renderWorldClocks() {
-  if (!currentUser) return;
-  const now = new Date();
-  const offset = zone => { const parts = new Intl.DateTimeFormat('en-US',{timeZone:zone,timeZoneName:'longOffset'}).formatToParts(now); const text = parts.find(p=>p.type==='timeZoneName').value; const match = text.match(/GMT([+-])(\d+):(\d+)/); return match ? (match[1]==='-'?-1:1)*(Number(match[2])*60+Number(match[3])) : 0; };
-  const list = document.getElementById('clock-list');
-  const selected = selectedClocks().sort((a,b)=>offset(clockCountries[a][1])-offset(clockCountries[b][1]) || clockCountries[a][0].localeCompare(clockCountries[b][0]));
-  const order = selected.join(',');
-  if (list.dataset.order === order) {
-    list.querySelectorAll('.world-clock').forEach(row => {
-      const zone = clockCountries[Number(row.dataset.clock)][1];
-      const time = row.querySelector('time'); time.dateTime = now.toISOString();
-      time.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(now);
-      row.querySelector('.clock-date').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',day:'numeric',month:'short',timeZoneName:'shortOffset'}).format(now);
-    });
-    return;
-  }
-  list.dataset.order = order; list.replaceChildren();
-  selected.forEach(i => {
-    const [name,zone] = clockCountries[i]; const row = document.createElement('div'); row.className = 'world-clock'; row.dataset.clock = String(i);
-    const details = document.createElement('div'); details.className = 'clock-details';
-    const country = document.createElement('h3'); country.className = 'clock-country'; country.textContent = name;
-    const time = document.createElement('time'); time.className = 'clock-time'; time.dateTime = now.toISOString();
-    time.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(now);
-    const date = document.createElement('p'); date.className = 'clock-date';
-    date.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',day:'numeric',month:'short',timeZoneName:'shortOffset'}).format(now);
-    details.append(country,time,date);
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'clock-remove'; remove.textContent = 'Remove'; remove.setAttribute('aria-label','Remove ' + name); remove.onclick = () => saveClocks(selectedClocks().filter(n=>n!==i)); row.append(details,remove); list.appendChild(row);
-  });
+  if (!currentUser || (workspaceClockController && workspaceClockUser === currentUser)) return;
+  if (workspaceClockController) workspaceClockController.destroy();
+  workspaceClockUser = currentUser;
+  const root=document.getElementById('workspace-timezones');
+  if(typeof TQTimezones==='undefined'){root.textContent='The clock module is unavailable. Deploy the timezone HTML file with this app version.';return;}
+  try { workspaceClockController = TQTimezones.mount(document.getElementById('workspace-timezones'), {key:'tq_clocks:'+currentUser.toLowerCase(),floating:true}); }
+  catch(error){root.textContent='Could not open clocks: '+error.message;}
 }
-function saveClocks(values) { try { localStorage.setItem('tq_clocks:' + currentUser.toLowerCase(),JSON.stringify(values)); renderWorldClocks(); } catch { showToast('Could not save clocks.', 'error'); } }
-document.getElementById('clock-add').addEventListener('click',()=>saveClocks([...new Set([...selectedClocks(),Number(clockSelect.value)])]));
-setInterval(renderWorldClocks,1000);
-
 </script>

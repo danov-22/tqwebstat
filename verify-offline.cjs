@@ -75,7 +75,19 @@ async function run() {
   assert.equal(mutations,1, 'Reordered retry must not duplicate input');
   assert.match(backend.serverRequest({...payload,delta:2}).error,/conflict/);
   assert.match(backend.serverRequest({...payload,username:'Bob'}).error,/conflict/);
-  rows[1][3]='';assert.match(backend.serverRequest(payload).error,/interrupted/);assert.equal(mutations,1);
+  rows[1][3]=JSON.stringify({error:'Exception: Lock timeout: another process was holding the lock for too long.'});
+  assert.equal(backend.serverRequest(payload).success,true);assert.equal(mutations,2);
+  assert.equal(backend.serverRequest(payload).success,true);assert.equal(mutations,2,'Successful retry must stay idempotent');
+  rows[1][3]=JSON.stringify({error:'Input server busy. Try again.',retryable:true});
+  assert.equal(backend.serverRequest(payload).success,true);assert.equal(mutations,3);
+  rows[1][3]='';assert.match(backend.serverRequest(payload).error,/interrupted/);assert.equal(mutations,3);
+  storage.clear();c=browser();c.postToScript=async()=>({success:true});
+  c.crypto={getRandomValues:bytes=>require('crypto').randomFillSync(bytes)};
+  assert.match(vm.runInContext('newInputRequestId()',c),/^[a-f0-9]{32}$/);
+  vm.runInContext("queueSave({action:'stat',username:currentUser});queueSave({action:'stat',username:currentUser});",c);
+  assert.equal(vm.runInContext('saveQueue.length',c),2);
+  await vm.runInContext('processSaveQueue(true)',c);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('saveQueue.length',c),0,'Explicit retry must drain the queue even when navigator.onLine is stale');
   console.log('Passed: durable offline queue, reload recovery, stable retry IDs, account isolation, storage failure, validation pause, duplicate prevention, interrupted-write protection.');
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

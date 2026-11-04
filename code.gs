@@ -473,6 +473,7 @@ function doPost(e) {
     var action = body.action;
     if (['chatRead', 'chatUnread', 'chatList', 'chatSend', 'chatRecall', 'chatLogout'].indexOf(action) !== -1) return chatRequest_(body);
     if (action === 'editQLNote') return editQLNote_(body);
+    if (['getExtendedNotes','saveExtendedNotes','setDailyCounts'].indexOf(action) !== -1) return workspaceEdit_(body);
 
     // ── Register ─────────────────────────────────────────────────
     if (action === 'register') {
@@ -1446,4 +1447,53 @@ function cleanupExpiredChat() {
       if (!expired && end !== -1) { sheet.deleteRows(i + 3, end - i); end = -1; }
     }
   } finally { lock.releaseLock(); }
+}
+
+// Authenticated notes and daily total corrections, serialized with stat mutations.
+function workspaceEdit_(body) {
+  var user = chatUser_(body.token);
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (body.action === 'getExtendedNotes' || body.action === 'saveExtendedNotes') {
+      var sheet = ss.getSheetByName('Extended_Notes');
+      if (!sheet) { sheet = ss.insertSheet('Extended_Notes'); sheet.appendRow(['Username','Text','Version']); }
+      var rows = sheet.getLastRow()>1 ? sheet.getRange(2,1,sheet.getLastRow()-1,3).getValues() : [];
+      var index = rows.findIndex(function(row){ return String(row[0]).toLowerCase().trim() === user.toLowerCase().trim(); });
+      var text = index<0 ? '' : String(rows[index][1] || '');
+      var version = index<0 ? '' : String(rows[index][2] || '');
+      if (body.action === 'getExtendedNotes') return jsonResponse({text:text,version:version});
+      if (typeof body.text !== 'string' || body.text.length>45000) return jsonResponse({error:'Notes must be at most 45000 characters.'});
+      // Retry after a lost response is safe when the stored text already matches.
+      if (body.text === text) return jsonResponse({success:true,version:version});
+      if (body.version !== version) return jsonResponse({error:'Notes changed in another session. Copy your edits, then reload notes before saving.'});
+      var target = index<0 ? sheet.getLastRow()+1 : index+2;
+      version = Utilities.getUuid();
+      sheet.getRange(target,1).setValue(user);
+      sheet.getRange(target,2).setRichTextValue(SpreadsheetApp.newRichTextValue().setText(body.text).build());
+      sheet.getRange(target,3).setValue(version);
+      SpreadsheetApp.flush();
+      return jsonResponse({success:true,version:version});
+    }
+    var date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date) return jsonResponse({error:'Choose a valid date.'});
+    var keys = ['ql','vm','snr','ni','hu','dnc','ooo','lb','fe','wn','fp','mp'];
+    if (!body.counts || !body.previous || !keys.every(function(key){ return typeof body.counts[key]==='number' && Number.isInteger(body.counts[key]) && body.counts[key]>=0 && body.counts[key]<=10000; })) return jsonResponse({error:'Totals must be whole numbers from 0 to 10000.'});
+    var sheets=ensureSheets(), stats=sheets.statsSheet;
+    var tz=ss.getSpreadsheetTimeZone(), row=findStatsRow(stats,date,user,tz);
+    var values=row<0 ? [date,user,0,0,0,0,0,0,0,0,0,0,0,0] : stats.getRange(row,1,1,14).getValues()[0];
+    var alreadySaved=keys.every(function(key,i){ return (Number(values[i+2])||0)===body.counts[key]; });
+    if (alreadySaved) return jsonResponse({success:true});
+    if (!keys.every(function(key,i){ return (Number(values[i+2])||0)===body.previous[key]; })) return jsonResponse({error:'Daily totals changed. Sync the overview and try again.'});
+    keys.forEach(function(key,i){values[i+2]=body.counts[key];});
+    if(row<0) stats.appendRow(values); else stats.getRange(row,1,1,14).setValues([values]);
+    // Old event history no longer describes the corrected totals.
+    var history=sheets.historySheet;
+    if(history.getLastRow()>1) {
+      var entries=history.getRange(2,1,history.getLastRow()-1,3).getValues();
+      for(var i=entries.length-1;i>=0;i--) if(toDateStr(entries[i][1],tz)===date && String(entries[i][2]).toLowerCase().trim()===user.toLowerCase().trim()) history.deleteRow(i+2);
+    }
+    clearStatsCache(user,date); SpreadsheetApp.flush();
+    return jsonResponse({success:true});
+  } finally {lock.releaseLock();}
 }

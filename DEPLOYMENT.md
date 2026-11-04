@@ -83,6 +83,13 @@ Verification: run `node verify-offline.cjs` and `node verify-features.cjs`. Live
 
 Redeploy all three HTML files and the backend using steps 1?5 above. Existing pending requests keep their IDs; the backend now compares payload values independently of property order, allowing reordered retries without duplicating inputs. A conflict with different values remains blocked for reconciliation; do not delete its receipt or replace the request ID blindly.
 
-Input sync now appears in the footer. Click a category number to set today's total; changes use the existing durable save/undo queue, including lead-note removal and quality-flag history. Edit label changes the display name for that user on this browser, while reporting categories stay consistent. Large adjustments can take time to sync. Reducing qualified leads removes the latest lead notes.
+Input sync now appears in the footer. Click a category number to set today's total; changes use the existing durable save/undo queue, including lead-note removal and quality-flag history. Status labels use their standard names. Large adjustments can take time to sync. Reducing qualified leads removes the latest lead notes.
 
-Chat includes saved country/city clocks sorted by current UTC offset, including daylight saving changes. Countries with multiple time zones include the city in their name. Notes includes a second editable rebuttals/extended notepad. Clock choices, labels, and both notepads are stored locally per user; clearing browser data removes them.
+The Timezones page, between Notes and Chat, includes saved country/city clocks sorted by current UTC offset, including daylight saving changes. Countries with multiple time zones include the city in their name. Notes includes a second editable rebuttals/extended notepad stored per authenticated user in the Extended_Notes spreadsheet tab. Click Save extended notes to save across browsers. An existing local extended draft is offered when the server has no text. Concurrent changes are rejected so they cannot overwrite newer notes. Personal notes and clock choices remain browser-local.
+
+
+## Daily overview corrections
+
+Redeploy the backend and all three app HTML files. The monthly overview now has a daily totals editor immediately below its line graph. Choose a date in the displayed month, edit category totals and FP/MP, then Save daily totals. Pending inputs must finish syncing first. Corrections require the signed-in session, compare previous values to prevent overwriting concurrent input, preserve QL notes, and clear only the corrected user's selected-day Undo history. Existing lead notes may outnumber a reduced QL total; they are retained deliberately. Sync updates the charts and today's preview after saving.
+
+Validation: `node verify-features.cjs`, `node verify-offline.cjs`, and `node verify-workspace-edits.cjs`.

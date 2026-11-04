@@ -337,7 +337,6 @@ function onLoginSuccess(username) {
 
   loadPersonalNotes();
   loadExtendedNotes();
-  loadCategoryLabels();
   renderWorldClocks();
   showAppPage('overview');
   initApp();
@@ -381,9 +380,10 @@ document.getElementById('btn-logout').addEventListener('click', doLogout);
 const appPageButtons = document.querySelectorAll('[data-app-page]');
 const appPrimaryCards = document.querySelectorAll('.app > .card');
 const appViews = {
-  overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('daily-perf-card'), document.getElementById('lead-calendar-card')],
+  overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('day-editor-card'), document.getElementById('daily-perf-card'), document.getElementById('lead-calendar-card')],
   input: [document.getElementById('input-performance-card'), document.getElementById('stats-grid')],
   notes: [document.getElementById('personal-notes-card')],
+  timezones: [document.getElementById('timezones-card')],
   chat: [document.getElementById('chat-card')]
 };
 const managedAppViews = [].concat.apply([], Object.keys(appViews).map(key => appViews[key])).filter(Boolean);
@@ -809,7 +809,7 @@ function renderStatButtons() {
     count.setAttribute('role', 'button');
     count.setAttribute('aria-label', 'Edit ' + cat.label + ' count');
     const editCount = () => {
-      const value = prompt('Set today?s ' + cat.label + ' total (whole number, 0?10000). Reducing leads removes the latest notes.', String(todayCounts[cat.key] || 0));
+      const value = prompt('Set the total for today: ' + cat.label + ' (whole number, 0-10000).' + (cat.isQL ? ' Reducing leads removes the latest notes.' : ''), String(todayCounts[cat.key] || 0));
       if (value === null) return;
       const target = Number(value);
       if (!value.trim() || !Number.isInteger(target) || target < 0 || target > 10000) { showToast('Enter a whole number from 0 to 10000.', 'error'); return; }
@@ -824,19 +824,6 @@ function renderStatButtons() {
     };
     count.addEventListener('click', editCount);
     count.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); editCount(); } });
-    const editLabel = document.createElement('button');
-    editLabel.type = 'button'; editLabel.className = 'sync-btn'; editLabel.textContent = 'Edit label';
-    editLabel.addEventListener('click', () => {
-      const label = prompt('Status label', cat.label);
-      if (label === null || !label.trim()) return;
-      const labels = Object.fromEntries(CATEGORIES.map(c => [c.key, c.key === cat.key ? label.trim().slice(0,80) : c.label]));
-      try { localStorage.setItem('tq_labels:' + currentUser.toLowerCase(), JSON.stringify(labels)); }
-      catch { showToast('Could not save label.', 'error'); return; }
-      cat.label = labels[cat.key];
-      card.querySelector('.stat-label').textContent = cat.label;
-      card.querySelector('[data-action="inc"]').textContent = cat.label;
-    });
-    card.appendChild(editLabel);
     statsGrid.appendChild(card);
   });
 
@@ -1387,6 +1374,7 @@ function showChartState(state) {
    DAILY PERFORMANCE  (numbers + QL notes)
    ════════════════════════════════════════════════════════════════════ */
 function renderDailyPerformance() {
+  renderDayEditor();
   if (!monthlyData.length) return;
   const row = monthlyData[selectedDayIndex];
 
@@ -1940,21 +1928,69 @@ async function refreshUnreadChat() {
 }
 
 
-const defaultCategoryLabels = CATEGORIES.map(c => c.label);
-function loadCategoryLabels() {
-  let labels = {};
-  try { labels = JSON.parse(localStorage.getItem('tq_labels:' + currentUser.toLowerCase()) || '{}'); } catch {}
-  CATEGORIES.forEach((c,i) => { c.label = typeof labels[c.key] === 'string' ? labels[c.key] : defaultCategoryLabels[i]; });
+let extendedNotesVersion = '', extendedNotesUser = '', extendedNotesLoading = false;
+async function loadExtendedNotes() {
+  const field = document.getElementById('extended-notes'), status = document.getElementById('extended-notes-status');
+  const user = currentUser;
+  field.value = ''; field.disabled = true; extendedNotesLoading = true;
+  document.getElementById('save-extended-notes').disabled = true;
+  status.textContent = 'Loading saved notes...';
+  try {
+    const result = await postToScript({action:'getExtendedNotes',token:chatToken});
+    if (currentUser !== user) return;
+    extendedNotesUser = user; extendedNotesVersion = result.version;
+    field.value = result.text || ''; field.disabled = false;
+    let localDraft = '';
+    try { localDraft = localStorage.getItem(personalNotesKey() + ':extended') || ''; } catch {}
+    if (!field.value && localDraft) field.value = localDraft;
+    status.textContent = !result.text && localDraft ? 'Previous browser notes restored. Click Save extended notes to store them in Webstat.' : 'Stored in Webstat. Click Save extended notes after editing.';
+  } catch (error) { if (currentUser === user) status.textContent = 'Could not load notes: ' + error.message + '. Sign in again to retry.'; }
+  finally { if (currentUser === user) { extendedNotesLoading = false; document.getElementById('save-extended-notes').disabled = field.disabled; } }
 }
-function loadExtendedNotes() {
-  const field = document.getElementById('extended-notes');
-  try { field.value = localStorage.getItem(personalNotesKey() + ':extended') || ''; field.disabled = false; document.getElementById('extended-notes-status').textContent = 'Saved on this browser only'; }
-  catch { field.value = ''; field.disabled = true; document.getElementById('extended-notes-status').textContent = 'Browser storage unavailable'; }
+document.getElementById('save-extended-notes').addEventListener('click', async () => {
+  if (!currentUser || extendedNotesLoading || extendedNotesUser !== currentUser) return;
+  const user = currentUser, field = document.getElementById('extended-notes'), button = document.getElementById('save-extended-notes'), status = document.getElementById('extended-notes-status');
+  button.disabled = true; field.disabled = true;
+  try {
+    const result = await postToScript({action:'saveExtendedNotes',token:chatToken,text:field.value,version:extendedNotesVersion});
+    if (currentUser !== user) return;
+    extendedNotesVersion = result.version; status.textContent = 'Saved to Webstat.';
+    try { localStorage.removeItem(personalNotesKey() + ':extended'); } catch {}
+  } catch (error) { if (currentUser === user) status.textContent = 'Could not save: ' + error.message + '. Your text remains here; copy it before reloading.'; }
+  finally { if (currentUser === user) { button.disabled = false; field.disabled = false; } }
+});
+const dayEditorKeys = [...CATEGORIES.map(c=>c.key),'fe','fp','mp'];
+let dayEditorOriginal = null;
+function renderDayEditor() {
+  const picker = document.getElementById('edit-stats-date');
+  if (!selectedMonth) return;
+  picker.min = selectedMonth + '-01';
+  const parts = selectedMonth.split('-').map(Number);
+  picker.max = selectedMonth + '-' + new Date(parts[0],parts[1],0).getDate();
+  if (!picker.value.startsWith(selectedMonth)) picker.value = picker.min;
+  const row = monthlyData.find(d=>d.date===picker.value) || {};
+  dayEditorOriginal = Object.fromEntries(dayEditorKeys.map(key=>[key,Number(row[key]) || 0]));
+  const fields = document.getElementById('day-editor-fields'); fields.replaceChildren();
+  dayEditorKeys.forEach(key=>{
+    const label = document.createElement('label'); label.textContent = (CATEGORIES.find(c=>c.key===key) || {label:({fe:'FE',fp:'Full Pitch',mp:'Money Part'})[key]}).label;
+    const input = document.createElement('input'); input.type='number'; input.min='0'; input.max='10000'; input.step='1'; input.required=true; input.name=key; input.value=dayEditorOriginal[key]; label.appendChild(input); fields.appendChild(label);
+  });
 }
-document.getElementById('extended-notes').addEventListener('input', event => {
-  if (!currentUser) return;
-  try { localStorage.setItem(personalNotesKey() + ':extended', event.target.value); document.getElementById('extended-notes-status').textContent = 'Saved on this browser only'; }
-  catch { document.getElementById('extended-notes-status').textContent = 'Could not save. Copy your notes before leaving.'; }
+document.getElementById('edit-stats-date').addEventListener('change',renderDayEditor);
+document.getElementById('day-editor-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const status = document.getElementById('day-editor-status'), button = document.getElementById('save-day-counts');
+  if (queueRunning || saveQueue.length) { status.textContent='Sync pending inputs before editing daily totals.'; return; }
+  const date = document.getElementById('edit-stats-date').value, user=currentUser;
+  if (!date || !date.startsWith(selectedMonth)) { status.textContent='Choose a day in the selected month.'; return; }
+  const counts = Object.fromEntries(dayEditorKeys.map(key=>[key,Number(event.target.elements.namedItem(key).value)]));
+  button.disabled=true;
+  try {
+    await postToScript({action:'setDailyCounts',token:chatToken,date,counts,previous:dayEditorOriginal});
+    if (currentUser!==user) return;
+    inputVersion++; await fetchMonthlyData(); status.textContent='Daily totals saved.';
+  } catch(error) { if(currentUser===user) status.textContent='Could not save: '+error.message; }
+  finally { button.disabled=false; }
 });
 const clockCountries = [
  ['United Kingdom','Europe/London'],['France','Europe/Paris'],['Germany','Europe/Berlin'],['Spain','Europe/Madrid'],['Italy','Europe/Rome'],['Portugal','Europe/Lisbon'],['Netherlands','Europe/Amsterdam'],['Greece','Europe/Athens'],['Poland','Europe/Warsaw'],['Finland','Europe/Helsinki'],['Turkey','Europe/Istanbul'],

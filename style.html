@@ -1141,4 +1141,13 @@ body {
 .world-clock button { background:transparent; color:var(--text); border:1px solid var(--border); border-radius:5px; cursor:pointer; }
 .stat-count[role=button] { cursor:pointer; border-bottom:1px dashed currentColor; }
 #extended-notes { width:100%; box-sizing:border-box; resize:vertical; padding:1rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:10px; font:inherit; line-height:1.6; }
+
+.day-editor-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:16px; margin:20px 0; }
+.day-editor-fields label { display:grid; gap:6px; }
+.day-editor-fields input, #edit-stats-date { padding:10px; border:1px solid var(--border); border-radius:8px; color:var(--text); background:var(--bg); font:inherit; width:100%; box-sizing:border-box; }
+#edit-stats-date { max-width:240px; margin:12px; }
+#timezones-card .world-clocks { border:0; }
+#timezones-card #clock-country { max-width:480px; display:block; }
+#timezones-card #clock-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; margin-top:24px; }
+#timezones-card .world-clock { padding:20px; background:var(--bg); border:1px solid var(--border); border-radius:10px; font-size:1rem; }
 </style>

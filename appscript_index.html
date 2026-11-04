@@ -113,6 +113,7 @@
         <button class="active" type="button" data-app-page="overview">Overview</button>
         <button type="button" data-app-page="input">Input</button>
         <button type="button" data-app-page="notes">Notes</button>
+        <button type="button" data-app-page="timezones">Timezones</button>
         <button type="button" data-app-page="chat">Chat <span id="chat-unread" class="chat-badge" hidden aria-live="polite"></span></button>
       </nav>
 
@@ -180,6 +181,13 @@
         </div>
       </section>
 
+      <section class="card" id="day-editor-card">
+        <h2 class="section-title">Edit daily inputs</h2>
+        <label for="edit-stats-date">Select a day</label><input type="date" id="edit-stats-date">
+        <p>Update the totals for the selected day. Existing lead notes are preserved. Saving clears that day's individual Undo history.</p>
+        <form id="day-editor-form"><div id="day-editor-fields" class="day-editor-fields"></div><button class="sync-btn" id="save-day-counts" type="submit">Save daily totals</button></form>
+        <p id="day-editor-status" role="status"></p>
+      </section>
       <section class="card" id="lead-calendar-card">
         <div class="chart-header"><h2 class="section-title">Qualified leads calendar</h2><span id="calendar-month-total"></span></div>
         <p id="calendar-month-label"></p>
@@ -238,7 +246,7 @@
         <p class="chat-service-note">Messages disappear after 7 days. You can recall your own messages at any time. Private conversations are visible in the app only to the two participants; spreadsheet owners can access stored messages.</p>
         <div class="chat-layout">
           <aside class="chat-sidebar" aria-label="Conversations">
-            <section class="world-clocks"><h3>World clocks</h3><label for="clock-country">Add a country / city</label><select id="clock-country"></select><button type="button" class="sync-btn" id="clock-add">Add clock</button><div id="clock-list"></div></section>
+
             <button type="button" class="chat-room-button" id="chat-public">Everyone - open room</button>
             <label for="chat-peer">Start a private conversation</label>
             <select id="chat-peer"><option value="">Choose a user</option></select>
@@ -255,6 +263,7 @@
           </div>
         </div>
       </section>
+      <section class="card" id="timezones-card"><h2 class="section-title">Timezones</h2><p>Choose countries and cities. Clocks are arranged by current UTC offset.</p><section class="world-clocks"><h3>World clocks</h3><label for="clock-country">Add a country / city</label><select id="clock-country"></select><button type="button" class="sync-btn" id="clock-add">Add clock</button><div id="clock-list"></div></section></section>
       <section class="card" id="personal-notes-card">
         <h2 class="section-title"><label for="personal-notes">Personal notes</label></h2>
         <p>Keep ongoing notes here. Saved automatically on this device and browser for your username. Clearing browser data removes these notes.</p>
@@ -262,7 +271,7 @@
         <p id="notes-save-status" role="status"></p>
         <h2 class="section-title"><label for="extended-notes">Rebuttals / extended notes</label></h2>
         <textarea id="extended-notes" rows="16" placeholder="Write rebuttals, scripts, or other notes..."></textarea>
-        <p id="extended-notes-status" role="status"></p>
+        <button type="button" class="sync-btn" id="save-extended-notes">Save extended notes</button><p id="extended-notes-status" role="status"></p>
       </section>
       <section class="card" id="input-performance-card">
         <div class="input-call-totals"><div>Yesterday<strong id="input-yesterday-calls">?</strong></div><div>Today<strong id="input-today-calls">0</strong></div></div>

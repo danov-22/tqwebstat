@@ -24,3 +24,10 @@ assert.match(call({action:'setDailyCounts',date:'2026-11-01',previous,counts:{..
 assert.match(call({action:'setDailyCounts',date:'2026-11-01',previous:counts,counts:{...counts,vm:-1}}).error,/whole/);
 assert.match(call({action:'setDailyCounts',date:'2026-02-30',previous,counts}).error,/valid date/);
 console.log('Passed: server notes, literal text, authentication, concurrent-edit protection, retry safety, daily total mapping, validation, and selective Undo cleanup.');
+
+// Exercise the dedicated browser RPC, independent of the HTTP action router.
+context.jsonResponse=value=>({getContent:()=>JSON.stringify(value)});
+assert.equal(context.serverExtendedNotes({action:'getExtendedNotes',token:'valid'}).text,'=literal note');
+assert.match(context.serverExtendedNotes({action:'getExtendedNotes',token:'bad'}).error,/Unauthorized/);
+assert.match(context.serverExtendedNotes({action:'setDailyCounts',token:'valid'}).error,/Invalid notes action/);
+console.log('Passed: direct notes RPC loading, authentication failures, and action allowlist.');

@@ -361,6 +361,7 @@ function doLogout() {
   document.getElementById('chat-text').value = '';
   document.getElementById('personal-notes').value = '';
   document.getElementById('extended-notes').value = '';
+  extendedNotesLoading = false;
   currentUser = null;
   try { localStorage.removeItem('tq_user'); } catch {}
   appPage.classList.remove('visible');
@@ -1928,15 +1929,39 @@ async function refreshUnreadChat() {
 }
 
 
+function requestExtendedNotes(payload) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Notes request timed out. Please retry.')), 55000);
+    try {
+      google.script.run.withSuccessHandler(result => {
+        clearTimeout(timer);
+        if (result && result.error) reject(new Error(result.error));
+        else resolve(result);
+      }).withFailureHandler(error => {
+        clearTimeout(timer); reject(new Error(error.message || String(error)));
+      }).serverExtendedNotes(payload);
+    } catch (error) { clearTimeout(timer); reject(error); }
+  });
+}
+function extendedNotesError(error) {
+  const message = error.message || String(error);
+  if (/Unknown action|serverExtendedNotes.*(not|function)|Script function not found|workspaceEdit_.*not defined/i.test(message)) {
+    return 'The deployed Webstat backend is missing the notes update. Update code.gs and deploy a new Apps Script version, then reload this page.';
+  }
+  if (/CHAT_AUTH/.test(message)) return 'Your session has expired. Copy any unsaved notes, then sign out and sign in again.';
+  return 'Could not load notes: ' + message + '. Use Reload saved notes to retry.';
+}
 let extendedNotesVersion = '', extendedNotesUser = '', extendedNotesLoading = false;
 async function loadExtendedNotes() {
   const field = document.getElementById('extended-notes'), status = document.getElementById('extended-notes-status');
   const user = currentUser;
+  if (extendedNotesLoading) return;
   field.value = ''; field.disabled = true; extendedNotesLoading = true;
   document.getElementById('save-extended-notes').disabled = true;
+  document.getElementById('reload-extended-notes').disabled = true;
   status.textContent = 'Loading saved notes...';
   try {
-    const result = await postToScript({action:'getExtendedNotes',token:chatToken});
+    const result = await requestExtendedNotes({action:'getExtendedNotes',token:chatToken});
     if (currentUser !== user) return;
     extendedNotesUser = user; extendedNotesVersion = result.version;
     field.value = result.text || ''; field.disabled = false;
@@ -1944,20 +1969,27 @@ async function loadExtendedNotes() {
     try { localDraft = localStorage.getItem(personalNotesKey() + ':extended') || ''; } catch {}
     if (!field.value && localDraft) field.value = localDraft;
     status.textContent = !result.text && localDraft ? 'Previous browser notes restored. Click Save extended notes to store them in Webstat.' : 'Stored in Webstat. Click Save extended notes after editing.';
-  } catch (error) { if (currentUser === user) status.textContent = 'Could not load notes: ' + error.message + '. Sign in again to retry.'; }
-  finally { if (currentUser === user) { extendedNotesLoading = false; document.getElementById('save-extended-notes').disabled = field.disabled; } }
+  } catch (error) { if (currentUser === user) status.textContent = extendedNotesError(error); }
+  finally { if (currentUser === user) { extendedNotesLoading = false; document.getElementById('save-extended-notes').disabled = field.disabled; document.getElementById('reload-extended-notes').disabled = false; } }
 }
+document.getElementById('reload-extended-notes').addEventListener('click', () => {
+  if (!currentUser || extendedNotesLoading) return;
+  const field = document.getElementById('extended-notes');
+  if (!field.disabled && field.value && !confirm('Reload saved notes? Unsaved changes in this section will be replaced.')) return;
+  loadExtendedNotes();
+});
 document.getElementById('save-extended-notes').addEventListener('click', async () => {
   if (!currentUser || extendedNotesLoading || extendedNotesUser !== currentUser) return;
   const user = currentUser, field = document.getElementById('extended-notes'), button = document.getElementById('save-extended-notes'), status = document.getElementById('extended-notes-status');
   button.disabled = true; field.disabled = true;
+  document.getElementById('reload-extended-notes').disabled = true;
   try {
-    const result = await postToScript({action:'saveExtendedNotes',token:chatToken,text:field.value,version:extendedNotesVersion});
+    const result = await requestExtendedNotes({action:'saveExtendedNotes',token:chatToken,text:field.value,version:extendedNotesVersion});
     if (currentUser !== user) return;
     extendedNotesVersion = result.version; status.textContent = 'Saved to Webstat.';
     try { localStorage.removeItem(personalNotesKey() + ':extended'); } catch {}
   } catch (error) { if (currentUser === user) status.textContent = 'Could not save: ' + error.message + '. Your text remains here; copy it before reloading.'; }
-  finally { if (currentUser === user) { button.disabled = false; field.disabled = false; } }
+  finally { if (currentUser === user) { button.disabled = false; field.disabled = false; document.getElementById('reload-extended-notes').disabled = false; } }
 });
 const dayEditorKeys = [...CATEGORIES.map(c=>c.key),'fe','fp','mp'];
 let dayEditorOriginal = null;
@@ -1995,9 +2027,9 @@ document.getElementById('day-editor-form').addEventListener('submit',async event
 const clockCountries = [
  ['United Kingdom','Europe/London'],['France','Europe/Paris'],['Germany','Europe/Berlin'],['Spain','Europe/Madrid'],['Italy','Europe/Rome'],['Portugal','Europe/Lisbon'],['Netherlands','Europe/Amsterdam'],['Greece','Europe/Athens'],['Poland','Europe/Warsaw'],['Finland','Europe/Helsinki'],['Turkey','Europe/Istanbul'],
  ['South Africa','Africa/Johannesburg'],['Egypt','Africa/Cairo'],['Kenya','Africa/Nairobi'],['Nigeria','Africa/Lagos'],['Morocco','Africa/Casablanca'],
- ['Brazil ? S?o Paulo','America/Sao_Paulo'],['Argentina','America/Argentina/Buenos_Aires'],['Chile','America/Santiago'],['Colombia','America/Bogota'],['Peru','America/Lima'],['Venezuela','America/Caracas'],
- ['USA ? New York','America/New_York'],['USA ? Chicago','America/Chicago'],['USA ? Los Angeles','America/Los_Angeles'],['Canada ? Toronto','America/Toronto'],['Mexico ? Mexico City','America/Mexico_City'],
- ['India','Asia/Kolkata'],['China','Asia/Shanghai'],['Japan','Asia/Tokyo'],['Indonesia ? Jakarta','Asia/Jakarta'],['Indonesia ? Makassar','Asia/Makassar'],['Philippines','Asia/Manila'],['Singapore','Asia/Singapore'],['UAE','Asia/Dubai'],['Australia ? Sydney','Australia/Sydney'],['New Zealand','Pacific/Auckland']
+ ['Brazil - S\u00e3o Paulo','America/Sao_Paulo'],['Argentina','America/Argentina/Buenos_Aires'],['Chile','America/Santiago'],['Colombia','America/Bogota'],['Peru','America/Lima'],['Venezuela','America/Caracas'],
+ ['USA - New York','America/New_York'],['USA - Chicago','America/Chicago'],['USA - Los Angeles','America/Los_Angeles'],['Canada - Toronto','America/Toronto'],['Mexico - Mexico City','America/Mexico_City'],
+ ['India','Asia/Kolkata'],['China','Asia/Shanghai'],['Japan','Asia/Tokyo'],['Indonesia - Jakarta','Asia/Jakarta'],['Indonesia - Makassar','Asia/Makassar'],['Philippines','Asia/Manila'],['Singapore','Asia/Singapore'],['UAE','Asia/Dubai'],['Australia - Sydney','Australia/Sydney'],['New Zealand','Pacific/Auckland']
 ];
 const clockSelect = document.getElementById('clock-country');
 clockCountries.forEach(([name,zone],i) => { const option = document.createElement('option'); option.value = i; option.textContent = name + ' (' + zone + ')'; clockSelect.appendChild(option); });
@@ -2008,11 +2040,29 @@ function renderWorldClocks() {
   if (!currentUser) return;
   const now = new Date();
   const offset = zone => { const parts = new Intl.DateTimeFormat('en-US',{timeZone:zone,timeZoneName:'longOffset'}).formatToParts(now); const text = parts.find(p=>p.type==='timeZoneName').value; const match = text.match(/GMT([+-])(\d+):(\d+)/); return match ? (match[1]==='-'?-1:1)*(Number(match[2])*60+Number(match[3])) : 0; };
-  const list = document.getElementById('clock-list'); list.replaceChildren();
-  selectedClocks().sort((a,b)=>offset(clockCountries[a][1])-offset(clockCountries[b][1]) || clockCountries[a][0].localeCompare(clockCountries[b][0])).forEach(i => {
-    const [name,zone] = clockCountries[i]; const row = document.createElement('div'); row.className = 'world-clock';
-    const text = document.createElement('span'); text.textContent = name + ' ? ' + new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZoneName:'shortOffset'}).format(now);
-    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '?'; remove.setAttribute('aria-label','Remove ' + name); remove.onclick = () => saveClocks(selectedClocks().filter(n=>n!==i)); row.append(text,remove); list.appendChild(row);
+  const list = document.getElementById('clock-list');
+  const selected = selectedClocks().sort((a,b)=>offset(clockCountries[a][1])-offset(clockCountries[b][1]) || clockCountries[a][0].localeCompare(clockCountries[b][0]));
+  const order = selected.join(',');
+  if (list.dataset.order === order) {
+    list.querySelectorAll('.world-clock').forEach(row => {
+      const zone = clockCountries[Number(row.dataset.clock)][1];
+      const time = row.querySelector('time'); time.dateTime = now.toISOString();
+      time.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(now);
+      row.querySelector('.clock-date').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',day:'numeric',month:'short',timeZoneName:'shortOffset'}).format(now);
+    });
+    return;
+  }
+  list.dataset.order = order; list.replaceChildren();
+  selected.forEach(i => {
+    const [name,zone] = clockCountries[i]; const row = document.createElement('div'); row.className = 'world-clock'; row.dataset.clock = String(i);
+    const details = document.createElement('div'); details.className = 'clock-details';
+    const country = document.createElement('h3'); country.className = 'clock-country'; country.textContent = name;
+    const time = document.createElement('time'); time.className = 'clock-time'; time.dateTime = now.toISOString();
+    time.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(now);
+    const date = document.createElement('p'); date.className = 'clock-date';
+    date.textContent = new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',day:'numeric',month:'short',timeZoneName:'shortOffset'}).format(now);
+    details.append(country,time,date);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'clock-remove'; remove.textContent = 'Remove'; remove.setAttribute('aria-label','Remove ' + name); remove.onclick = () => saveClocks(selectedClocks().filter(n=>n!==i)); row.append(details,remove); list.appendChild(row);
   });
 }
 function saveClocks(values) { try { localStorage.setItem('tq_clocks:' + currentUser.toLowerCase(),JSON.stringify(values)); renderWorldClocks(); } catch { showToast('Could not save clocks.', 'error'); } }

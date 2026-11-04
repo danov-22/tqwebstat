@@ -182,11 +182,12 @@
       </section>
 
       <section class="card" id="day-editor-card">
-        <h2 class="section-title">Edit daily inputs</h2>
+        <details id="day-editor-toggle"><summary class="section-title">Edit daily inputs</summary>
         <label for="edit-stats-date">Select a day</label><input type="date" id="edit-stats-date">
         <p>Update the totals for the selected day. Existing lead notes are preserved. Saving clears that day's individual Undo history.</p>
         <form id="day-editor-form"><div id="day-editor-fields" class="day-editor-fields"></div><button class="sync-btn" id="save-day-counts" type="submit">Save daily totals</button></form>
         <p id="day-editor-status" role="status"></p>
+        </details>
       </section>
       <section class="card" id="lead-calendar-card">
         <div class="chart-header"><h2 class="section-title">Qualified leads calendar</h2><span id="calendar-month-total"></span></div>
@@ -271,6 +272,7 @@
         <p id="notes-save-status" role="status"></p>
         <h2 class="section-title"><label for="extended-notes">Rebuttals / extended notes</label></h2>
         <textarea id="extended-notes" rows="16" placeholder="Write rebuttals, scripts, or other notes..."></textarea>
+        <button type="button" class="sync-btn" id="reload-extended-notes">Reload saved notes</button>
         <button type="button" class="sync-btn" id="save-extended-notes">Save extended notes</button><p id="extended-notes-status" role="status"></p>
       </section>
       <section class="card" id="input-performance-card">

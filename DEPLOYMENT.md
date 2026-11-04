@@ -93,3 +93,12 @@ The Timezones page, between Notes and Chat, includes saved country/city clocks s
 Redeploy the backend and all three app HTML files. The monthly overview now has a daily totals editor immediately below its line graph. Choose a date in the displayed month, edit category totals and FP/MP, then Save daily totals. Pending inputs must finish syncing first. Corrections require the signed-in session, compare previous values to prevent overwriting concurrent input, preserve QL notes, and clear only the corrected user's selected-day Undo history. Existing lead notes may outnumber a reduced QL total; they are retained deliberately. Sync updates the charts and today's preview after saving.
 
 Validation: `node verify-features.cjs`, `node verify-offline.cjs`, and `node verify-workspace-edits.cjs`.
+
+
+## Clock readability, navigation, and notes backend compatibility
+
+Update all four Apps Script files together: backend `code.gs`, HTML `index` from `appscript_index.html`, `script` from `script.html`, and `style` from `style.html`. Save, then **Deploy > Manage deployments > Edit > New version > Deploy** on the existing URL. Reload the web app afterward. Updating HTML alone does not install server-side notes functions.
+
+`Unknown action: getExtendedNotes` indicates that the deployed backend does not have the notes update; signing in again cannot install it. Notes now use the dedicated `serverExtendedNotes` RPC and display a deployment-specific message if it is unavailable. Use **Reload saved notes** to retry after a connection issue. The `Extended_Notes` tab is created automatically on the first authenticated load; existing server notes are preserved.
+
+Country clocks now separate a prominent country heading and large live time from the date and UTC offset. Country labels and Remove buttons no longer contain corrupted question marks. Navigation stays in the order Overview, Input, Notes, Timezones, Chat on one row, with horizontal scrolling on small screens. **Edit daily inputs** starts collapsed; click its heading to expand or collapse the editor.

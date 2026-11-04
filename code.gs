@@ -1497,3 +1497,11 @@ function workspaceEdit_(body) {
     return jsonResponse({success:true});
   } finally {lock.releaseLock();}
 }
+
+// Dedicated RPC for notes so HTML clients do not depend on the HTTP action router.
+function serverExtendedNotes(payload) {
+  if (!payload || ['getExtendedNotes','saveExtendedNotes'].indexOf(payload.action) === -1) return {error:'Invalid notes action.'};
+  try {
+    return JSON.parse(workspaceEdit_(payload).getContent());
+  } catch (error) { return {error:error.message || String(error)}; }
+}

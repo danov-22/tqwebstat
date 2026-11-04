@@ -140,3 +140,18 @@ If blocked, use **Export pending inputs + diagnostics** at the office, then brin
 For a request-ID conflict or interrupted receipt, inspect the reported request in `Input_Receipts`; do not generate a fresh ID or delete receipts blindly. These may represent a mutation whose outcome needs checking.
 
 Validation: `node verify-features.cjs`, `node verify-offline.cjs`, `node verify-workspace-edits.cjs`, and `node verify-timezones.cjs`. Local browser checks cover manual entry with the chart CDN absent, flag cards, timezone grouping, floating clocks across pages, public navigation, and mobile layout. The actual office connection has not been tested.
+
+
+## Clock and input layout polish
+
+Update Apps Script HTML `index`, `script`, `style`, and `timezone` from their repository counterparts, then deploy a new version on the existing URL. Publish the updated landing page, portal CSS, demo HTML/CSS/JS, public Timezones HTML, and shared timezone JS/CSS on the static host. This adjustment does not change the backend.
+
+- Landing preview shows only **TIMEZONES**. All three destination arrows share the same centered template.
+- Public clocks retain selections in this browser without login. Workspace choices remain separately saved per user.
+- Clock cards keep only the small flag beside the country name; colored bands and background tints are removed on both pages.
+- The public title is medium-sized and uses **TIME ON THE OTHER SIDE OF THE WORLD** above it.
+- Manual number fields and Save total have a fixed gap and border-box sizing to prevent overlap.
+- Drag the floating clock header to move it, or focus the title and use arrow keys. Position is saved with that user's browser preferences and stays within the viewport after resizing.
+- Demo page, demo app, and workspace theme controls now use **Light mode / Dark mode** text.
+
+Regenerate `timezone.html` with `node sync-timezone-assets.cjs` after changing shared clock files. Browser checks confirmed saved public selections after reload, saved drag position after reload, 14-pixel manual field gaps, uniform arrow positioning, and text-based theme toggles.

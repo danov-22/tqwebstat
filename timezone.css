@@ -12,8 +12,6 @@
 .tz-offset { color:var(--muted,#8b94a9);font-size:.9rem;letter-spacing:.08em; border-bottom:1px solid var(--border,var(--line,#2a2d3a));padding-bottom:10px; }
 .tz-cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:18px; }
 .tz-clock { position:relative;isolation:isolate;overflow:hidden;padding:24px;border:1px solid var(--border,var(--line,#2a2d3a));border-radius:13px;background:var(--bg,#0f1117); }
-.tz-clock::before { content:'';position:absolute;top:0;left:0;right:0;height:7px;background:var(--flag-stripe); }
-.tz-clock::after { content:'';position:absolute;inset:0;background:var(--flag-stripe);opacity:.065;z-index:-1;pointer-events:none; }
 .tz-clock-head { display:flex;gap:12px;align-items:flex-start;justify-content:space-between; }
 .tz-country { margin:0 0 22px;display:flex;gap:10px;align-items:center;font-size:1.2rem;line-height:1.35;color:var(--text,#e2e8f0); }
 .tz-flag { object-fit:contain;flex-shrink:0;border-radius:3px; }
@@ -33,3 +31,8 @@
 .tz-floating .tz-flag { width:28px;height:20px; }
 .tz-floating .tz-date { margin-top:6px;font-size:.75rem; }
 @media(max-width:560px){.tz-controls{align-items:stretch}.tz-select{width:100%;flex-basis:100%}.tz-floating{right:10px;bottom:10px;width:270px}.tz-float-list{max-height:30vh}}
+
+.tz-floating-header { cursor:grab;touch-action:none;user-select:none; }
+.tz-floating[data-dragging="true"] .tz-floating-header { cursor:grabbing; }
+.tz-floating-header strong:focus-visible { outline:2px solid #3b82f6;outline-offset:4px;border-radius:3px; }
+.tz-floating-header button { cursor:pointer; }

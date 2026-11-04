@@ -1174,10 +1174,15 @@ body {
 .manual-count-form { display:none;gap:10px;align-items:end;margin-top:16px; }
 .manual-count-form label { grid-column:1/-1; }
 .manual-count-form input { width:100%;min-width:0;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:1.35rem;font-variant-numeric:tabular-nums; }
-[data-input-mode="manual"] .manual-count-form { display:grid;grid-template-columns:1fr auto; }
+[data-input-mode="manual"] .manual-count-form { display:grid;grid-template-columns:minmax(0,1fr) auto; }
 [data-input-mode="manual"] .stat-actions { display:none !important; }
 .sync-tools { margin-top:12px;max-width:600px; }
 .sync-tools summary { cursor:pointer; }
 .sync-tools p { line-height:1.5; }
 .sync-tools button,.sync-tools input,.sync-tools label { display:block;margin-top:10px;max-width:100%; }
+
+.manual-count-form { column-gap:14px;row-gap:8px; }
+.manual-count-form input { box-sizing:border-box;max-width:100%;margin:0; }
+.manual-count-form .sync-btn { position:static;margin:0;align-self:stretch;white-space:nowrap; }
+#btn-theme { width:auto;min-width:104px;height:auto;min-height:38px;padding:9px 13px;white-space:nowrap;font:inherit;font-size:.95rem; }
 </style>

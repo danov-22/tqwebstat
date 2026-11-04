@@ -243,14 +243,16 @@ if (eyeFooterControl) eyeFooterControl.addEventListener('mouseenter', () => {
 (function applyTheme() {
   const saved = localStorage.getItem('tq_theme') || 'dark';
   document.documentElement.dataset.theme = saved;
-  themeBtn.textContent = saved === 'light' ? '🌙' : '☀️';
+  themeBtn.textContent = saved === 'light' ? 'Dark mode' : 'Light mode';
+  themeBtn.setAttribute('aria-pressed',String(saved === 'light'));
 })();
 
 themeBtn.addEventListener('click', () => {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
   document.documentElement.dataset.theme = next;
   localStorage.setItem('tq_theme', next);
-  themeBtn.textContent = next === 'light' ? '🌙' : '☀️';
+  themeBtn.textContent = next === 'light' ? 'Dark mode' : 'Light mode';
+  themeBtn.setAttribute('aria-pressed',String(next === 'light'));
 });
 
 /* ════════════════════════════════════════════════════════════════════

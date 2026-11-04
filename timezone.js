@@ -22,12 +22,13 @@ function groups(ids, now=new Date()) {
 function node(tag, className, text) {const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function mount(root, options={}) {
   const key=options.key || 'tq_public_clocks_v2';
-  let selected=[0,11,16], floating=false, timer, signature='', floatSignature='';
+  let selected=[0,11,16], floating=false, position=null, drag=null, timer, signature='', floatSignature='';
   try {
     const saved=JSON.parse(localStorage.getItem(key)||'null');
     if(Array.isArray(saved))selected=saved;
-    else if(saved){selected=saved.selected||[];floating=!!saved.floating;}
+    else if(saved){selected=saved.selected||[];floating=!!saved.floating;position=saved.position||null;}
   } catch {}
+  if(!position || !Number.isFinite(position.x) || !Number.isFinite(position.y))position=null;
   selected=selected.filter(i=>Number.isInteger(i)&&countries[i]);
   root.classList.add('tz-workspace');root.replaceChildren();
   const controls=node('div','tz-controls'), label=node('label','','Choose a country / city'), select=node('select','tz-select');
@@ -40,6 +41,7 @@ function mount(root, options={}) {
   const all=node('div','tz-groups');
   const floatPanel=node('aside','tz-floating');floatPanel.setAttribute('aria-label','Floating timezones');floatPanel.hidden=true;
   const floatHeader=node('div','tz-floating-header'), floatTitle=node('strong','','Timezones'), close=node('button','tz-button','Hide');close.type='button';floatHeader.append(floatTitle,close);
+  floatTitle.tabIndex=0;floatTitle.setAttribute('role','button');floatTitle.setAttribute('aria-label','Move floating clocks. Drag the header or use arrow keys.');floatTitle.title='Drag to move. Arrow keys also move this panel.';
   const floatList=node('div','tz-float-list');floatPanel.append(floatHeader,floatList);
   let floatingToggle;
   controls.append(label,select,add);
@@ -48,7 +50,7 @@ function mount(root, options={}) {
     floatingToggle.addEventListener('change',()=>{floating=floatingToggle.checked;persist();render();});document.body.appendChild(floatPanel);
   }
   root.append(controls,hint,status,all);
-  function persist(){try {localStorage.setItem(key,JSON.stringify({selected,floating}));status.textContent='';}catch{status.textContent='Could not save clock preferences on this browser.';}}
+  function persist(){try {localStorage.setItem(key,JSON.stringify({selected,floating,position}));status.textContent='';}catch{status.textContent='Could not save clock preferences on this browser.';}}
   function remove(id){selected=selected.filter(i=>i!==id);persist();render();}
   function build(container,compact){
     container.replaceChildren();
@@ -58,8 +60,7 @@ function mount(root, options={}) {
       const section=node('section','tz-group'), heading=node('h3','tz-offset',offsetLabel(group.offset)), grid=node('div','tz-cards');
       section.append(heading,grid);container.appendChild(section);
       group.ids.forEach(id=>{
-        const [name,zone,code,colors]=countries[id], card=node('article','tz-clock');card.dataset.zone=zone;
-        const palette=colors.split(' ');card.style.setProperty('--flag-stripe','linear-gradient(90deg,'+palette.map((color,i)=>color+' '+(100*i/palette.length)+'% '+(100*(i+1)/palette.length)+'%').join(',')+')');
+        const [name,zone,code]=countries[id], card=node('article','tz-clock');card.dataset.zone=zone;
         const head=node('div','tz-clock-head'), country=node('h4','tz-country');
         const flag=node('img','tz-flag');flag.src='https://flagcdn.com/w80/'+code+'.png';flag.alt=name+' flag';flag.width=40;flag.height=28;flag.loading='lazy';flag.referrerPolicy='no-referrer';
         const fallback=node('span','tz-flag-fallback',code.toUpperCase());fallback.hidden=true;
@@ -78,12 +79,32 @@ function mount(root, options={}) {
     const now=new Date(),next=JSON.stringify(groups(selected,now));
     if(signature!==next){signature=next;build(all,false);} update(all,now);
     floatPanel.hidden=!floating || !options.floating;
-    if(floating&&options.floating){if(floatSignature!==next){floatSignature=next;build(floatList,true);}update(floatList,now);}
+    if(floating&&options.floating){if(floatSignature!==next){floatSignature=next;build(floatList,true);}update(floatList,now);if(position)place(position.x,position.y);}
   }
+  function place(x,y){
+    const rect=floatPanel.getBoundingClientRect(), margin=8;
+    const width=document.documentElement.clientWidth,height=global.innerHeight;
+    position={x:Math.max(margin,Math.min(x,width-rect.width-margin)),y:Math.max(margin,Math.min(y,height-rect.height-margin))};
+    floatPanel.style.left=position.x+'px';floatPanel.style.top=position.y+'px';floatPanel.style.right='auto';floatPanel.style.bottom='auto';
+  }
+  function resize(){if(position&&floating)place(position.x,position.y);}
+  floatHeader.addEventListener('pointerdown',event=>{
+    if(event.button!==0 || event.target.closest('button'))return;
+    const rect=floatPanel.getBoundingClientRect();drag={id:event.pointerId,x:event.clientX,y:event.clientY,left:rect.left,top:rect.top};
+    floatHeader.setPointerCapture(event.pointerId);floatPanel.dataset.dragging='true';event.preventDefault();floatTitle.focus({preventScroll:true});
+  });
+  floatHeader.addEventListener('pointermove',event=>{if(drag&&drag.id===event.pointerId)place(drag.left+event.clientX-drag.x,drag.top+event.clientY-drag.y);});
+  function endDrag(event){if(!drag || event.pointerId!==drag.id)return;drag=null;delete floatPanel.dataset.dragging;persist();}
+  floatHeader.addEventListener('pointerup',endDrag);floatHeader.addEventListener('pointercancel',endDrag);floatHeader.addEventListener('lostpointercapture',endDrag);
+  floatTitle.addEventListener('keydown',event=>{
+    const moves={ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]};
+    if(!moves[event.key])return;event.preventDefault();const rect=floatPanel.getBoundingClientRect(),[x,y]=moves[event.key];place(rect.left+x,rect.top+y);persist();
+  });
+  global.addEventListener('resize',resize);
   add.addEventListener('click',()=>{if(select.value===''){status.textContent='Choose a country first.';return;}const id=Number(select.value);if(!selected.includes(id))selected.push(id);persist();render();});
   close.addEventListener('click',()=>{floating=false;if(floatingToggle)floatingToggle.checked=false;persist();render();});
   render();timer=setInterval(render,1000);
-  return {destroy(){clearInterval(timer);floatPanel.remove();root.replaceChildren();},render};
+  return {destroy(){clearInterval(timer);global.removeEventListener('resize',resize);floatPanel.remove();root.replaceChildren();},render};
 }
 global.TQTimezones={countries,utcMinutes,offsetLabel,groups,mount};
 })(typeof window!=='undefined'?window:globalThis);

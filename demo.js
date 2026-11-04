@@ -6,9 +6,7 @@ const appThemeButton = document.querySelector('[data-app-theme]');
 function setTheme(theme) {
   root.dataset.demoTheme = theme;
   app?.classList.toggle('app-light', theme === 'light');
-  const icon = theme === 'dark' ? '\u2600' : '\u263e';
-  if (pageThemeButton) pageThemeButton.textContent = icon;
-  if (appThemeButton) appThemeButton.textContent = icon;
+  [pageThemeButton,appThemeButton].forEach(button=>{if(button){button.textContent=theme==='light'?'Dark mode':'Light mode';button.setAttribute('aria-pressed',String(theme==='light'));}});
   localStorage.setItem('webstat_demo_theme', theme);
 }
 

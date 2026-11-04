@@ -336,6 +336,9 @@ function onLoginSuccess(username) {
   document.getElementById('user-greeting').textContent = formatUsername(username);
 
   loadPersonalNotes();
+  loadExtendedNotes();
+  loadCategoryLabels();
+  renderWorldClocks();
   showAppPage('overview');
   initApp();
   processSaveQueue();
@@ -358,6 +361,7 @@ function doLogout() {
   document.getElementById('chat-peer').innerHTML = '<option value="">Choose a user</option>';
   document.getElementById('chat-text').value = '';
   document.getElementById('personal-notes').value = '';
+  document.getElementById('extended-notes').value = '';
   currentUser = null;
   try { localStorage.removeItem('tq_user'); } catch {}
   appPage.classList.remove('visible');
@@ -479,7 +483,7 @@ function queueSave(payload, onSuccess, onFail) {
     if (note) note.value = '';
   }
   updateSyncStatus();
-  showToast(navigator.onLine ? 'Input saved locally. Syncing...' : 'Input saved locally. Waiting for connection.', 'info');
+
   processSaveQueue();
 }
 async function processSaveQueue() {
@@ -497,7 +501,7 @@ async function processSaveQueue() {
     try { persistOutbox(job.payload.requestId); }
     catch { syncProblem = 'Synced, but browser storage could not be updated. Keep this page open.'; }
     // Display callbacks must not block acknowledgement of saved requests.
-    try { if (job.onSuccess) job.onSuccess(result); else showToast('Input synced', 'success'); }
+    try { if (job.onSuccess) job.onSuccess(result); else updateSyncStatus(); }
     catch (error) { console.error('Saved input display failed', error); }
   } catch (err) {
     if (currentUser !== user) return;
@@ -800,6 +804,39 @@ function renderStatButtons() {
       btn.addEventListener('click', e => { e.stopPropagation(); onStatClick(e); });
     });
 
+    const count = card.querySelector('[data-count]');
+    count.tabIndex = 0;
+    count.setAttribute('role', 'button');
+    count.setAttribute('aria-label', 'Edit ' + cat.label + ' count');
+    const editCount = () => {
+      const value = prompt('Set today?s ' + cat.label + ' total (whole number, 0?10000). Reducing leads removes the latest notes.', String(todayCounts[cat.key] || 0));
+      if (value === null) return;
+      const target = Number(value);
+      if (!value.trim() || !Number.isInteger(target) || target < 0 || target > 10000) { showToast('Enter a whole number from 0 to 10000.', 'error'); return; }
+      const difference = target - (todayCounts[cat.key] || 0);
+      for (let i = 0; i < Math.abs(difference); i++) {
+        const before = todayCounts[cat.key] || 0;
+        if (difference > 0) recordStat(cat.key, 1);
+        else if (cat.isQL) undoLastQL();
+        else undoLastStat(cat.key);
+        if ((todayCounts[cat.key] || 0) === before) break;
+      }
+    };
+    count.addEventListener('click', editCount);
+    count.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); editCount(); } });
+    const editLabel = document.createElement('button');
+    editLabel.type = 'button'; editLabel.className = 'sync-btn'; editLabel.textContent = 'Edit label';
+    editLabel.addEventListener('click', () => {
+      const label = prompt('Status label', cat.label);
+      if (label === null || !label.trim()) return;
+      const labels = Object.fromEntries(CATEGORIES.map(c => [c.key, c.key === cat.key ? label.trim().slice(0,80) : c.label]));
+      try { localStorage.setItem('tq_labels:' + currentUser.toLowerCase(), JSON.stringify(labels)); }
+      catch { showToast('Could not save label.', 'error'); return; }
+      cat.label = labels[cat.key];
+      card.querySelector('.stat-label').textContent = cat.label;
+      card.querySelector('[data-action="inc"]').textContent = cat.label;
+    });
+    card.appendChild(editLabel);
     statsGrid.appendChild(card);
   });
 
@@ -1901,5 +1938,49 @@ async function refreshUnreadChat() {
     badge.setAttribute('aria-label', count + ' unread messages');
   } catch {} finally { unreadBusy = false; }
 }
+
+
+const defaultCategoryLabels = CATEGORIES.map(c => c.label);
+function loadCategoryLabels() {
+  let labels = {};
+  try { labels = JSON.parse(localStorage.getItem('tq_labels:' + currentUser.toLowerCase()) || '{}'); } catch {}
+  CATEGORIES.forEach((c,i) => { c.label = typeof labels[c.key] === 'string' ? labels[c.key] : defaultCategoryLabels[i]; });
+}
+function loadExtendedNotes() {
+  const field = document.getElementById('extended-notes');
+  try { field.value = localStorage.getItem(personalNotesKey() + ':extended') || ''; field.disabled = false; document.getElementById('extended-notes-status').textContent = 'Saved on this browser only'; }
+  catch { field.value = ''; field.disabled = true; document.getElementById('extended-notes-status').textContent = 'Browser storage unavailable'; }
+}
+document.getElementById('extended-notes').addEventListener('input', event => {
+  if (!currentUser) return;
+  try { localStorage.setItem(personalNotesKey() + ':extended', event.target.value); document.getElementById('extended-notes-status').textContent = 'Saved on this browser only'; }
+  catch { document.getElementById('extended-notes-status').textContent = 'Could not save. Copy your notes before leaving.'; }
+});
+const clockCountries = [
+ ['United Kingdom','Europe/London'],['France','Europe/Paris'],['Germany','Europe/Berlin'],['Spain','Europe/Madrid'],['Italy','Europe/Rome'],['Portugal','Europe/Lisbon'],['Netherlands','Europe/Amsterdam'],['Greece','Europe/Athens'],['Poland','Europe/Warsaw'],['Finland','Europe/Helsinki'],['Turkey','Europe/Istanbul'],
+ ['South Africa','Africa/Johannesburg'],['Egypt','Africa/Cairo'],['Kenya','Africa/Nairobi'],['Nigeria','Africa/Lagos'],['Morocco','Africa/Casablanca'],
+ ['Brazil ? S?o Paulo','America/Sao_Paulo'],['Argentina','America/Argentina/Buenos_Aires'],['Chile','America/Santiago'],['Colombia','America/Bogota'],['Peru','America/Lima'],['Venezuela','America/Caracas'],
+ ['USA ? New York','America/New_York'],['USA ? Chicago','America/Chicago'],['USA ? Los Angeles','America/Los_Angeles'],['Canada ? Toronto','America/Toronto'],['Mexico ? Mexico City','America/Mexico_City'],
+ ['India','Asia/Kolkata'],['China','Asia/Shanghai'],['Japan','Asia/Tokyo'],['Indonesia ? Jakarta','Asia/Jakarta'],['Indonesia ? Makassar','Asia/Makassar'],['Philippines','Asia/Manila'],['Singapore','Asia/Singapore'],['UAE','Asia/Dubai'],['Australia ? Sydney','Australia/Sydney'],['New Zealand','Pacific/Auckland']
+];
+const clockSelect = document.getElementById('clock-country');
+clockCountries.forEach(([name,zone],i) => { const option = document.createElement('option'); option.value = i; option.textContent = name + ' (' + zone + ')'; clockSelect.appendChild(option); });
+function selectedClocks() {
+  try { const saved = JSON.parse(localStorage.getItem('tq_clocks:' + currentUser.toLowerCase()) || '[0,11,16]'); return Array.isArray(saved) ? saved.filter(i => Number.isInteger(i) && clockCountries[i]) : []; } catch { return []; }
+}
+function renderWorldClocks() {
+  if (!currentUser) return;
+  const now = new Date();
+  const offset = zone => { const parts = new Intl.DateTimeFormat('en-US',{timeZone:zone,timeZoneName:'longOffset'}).formatToParts(now); const text = parts.find(p=>p.type==='timeZoneName').value; const match = text.match(/GMT([+-])(\d+):(\d+)/); return match ? (match[1]==='-'?-1:1)*(Number(match[2])*60+Number(match[3])) : 0; };
+  const list = document.getElementById('clock-list'); list.replaceChildren();
+  selectedClocks().sort((a,b)=>offset(clockCountries[a][1])-offset(clockCountries[b][1]) || clockCountries[a][0].localeCompare(clockCountries[b][0])).forEach(i => {
+    const [name,zone] = clockCountries[i]; const row = document.createElement('div'); row.className = 'world-clock';
+    const text = document.createElement('span'); text.textContent = name + ' ? ' + new Intl.DateTimeFormat('en-GB',{timeZone:zone,weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZoneName:'shortOffset'}).format(now);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '?'; remove.setAttribute('aria-label','Remove ' + name); remove.onclick = () => saveClocks(selectedClocks().filter(n=>n!==i)); row.append(text,remove); list.appendChild(row);
+  });
+}
+function saveClocks(values) { try { localStorage.setItem('tq_clocks:' + currentUser.toLowerCase(),JSON.stringify(values)); renderWorldClocks(); } catch { showToast('Could not save clocks.', 'error'); } }
+document.getElementById('clock-add').addEventListener('click',()=>saveClocks([...new Set([...selectedClocks(),Number(clockSelect.value)])]));
+setInterval(renderWorldClocks,1000);
 
 </script>

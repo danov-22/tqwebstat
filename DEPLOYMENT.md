@@ -78,3 +78,11 @@ Sync status and **Retry pending inputs** now float at the bottom left across app
 Chat messages show **Read by N** with reader names on hover or keyboard focus. Opening a conversation in a visible tab acknowledges its fetched messages; this indicates the conversation was opened, not that each message was individually inspected. Reader names update on the next chat refresh, normally within 10 seconds. Receipts are stored with each message in a new automatically initialized `ReadBy` column and expire or disappear with the message. Existing messages have no historical reader information. Private receipts are restricted to the conversation participants.
 
 Verification: run `node verify-offline.cjs` and `node verify-features.cjs`. Live checks after deployment: add an input offline, reconnect and confirm the notice returns to **All inputs synced**; switch sections and verify the floating notice remains; use two accounts to read public and private messages and hover over their reader counts.
+
+## Input footer, clocks, and editable inputs
+
+Redeploy all three HTML files and the backend using steps 1?5 above. Existing pending requests keep their IDs; the backend now compares payload values independently of property order, allowing reordered retries without duplicating inputs. A conflict with different values remains blocked for reconciliation; do not delete its receipt or replace the request ID blindly.
+
+Input sync now appears in the footer. Click a category number to set today's total; changes use the existing durable save/undo queue, including lead-note removal and quality-flag history. Edit label changes the display name for that user on this browser, while reporting categories stay consistent. Large adjustments can take time to sync. Reducing qualified leads removes the latest lead notes.
+
+Chat includes saved country/city clocks sorted by current UTC offset, including daylight saving changes. Countries with multiple time zones include the city in their name. Notes includes a second editable rebuttals/extended notepad. Clock choices, labels, and both notepads are stored locally per user; clearing browser data removes them.

@@ -56,7 +56,7 @@ async function run() {
   assert.equal(vm.runInContext('saveQueue.length',c),1);
   assert.equal(vm.runInContext('syncProblem',c),'');
   const source=fs.readFileSync('code.gs','utf8');
-  const wrapper=source.slice(source.indexOf('function serverRequest('),source.indexOf('\nfunction serverMonthlyData'));
+  const wrapper=source.slice(source.indexOf('function sameInputPayload_('),source.indexOf('\nfunction serverMonthlyData'));
   const rows=[];let mutations=0;
   const sheet={getLastRow:()=>rows.length,appendRow:row=>rows.push(row),getRange:(r,col,n,w)=>({
     getValues:()=>rows.slice(r-1,r-1+n).map(row=>row.slice(col-1,col-1+w)),
@@ -71,6 +71,9 @@ async function run() {
   const payload={action:'stat',username:'Alice',requestId:'12345678-1234-1234-1234-123456789012'};
   assert.equal(backend.serverRequest(payload).success,true);
   assert.equal(backend.serverRequest(payload).fp,true);assert.equal(mutations,1);
+  assert.equal(backend.serverRequest({requestId:payload.requestId,username:'Alice',action:'stat'}).success,true);
+  assert.equal(mutations,1, 'Reordered retry must not duplicate input');
+  assert.match(backend.serverRequest({...payload,delta:2}).error,/conflict/);
   assert.match(backend.serverRequest({...payload,username:'Bob'}).error,/conflict/);
   rows[1][3]='';assert.match(backend.serverRequest(payload).error,/interrupted/);assert.equal(mutations,1);
   console.log('Passed: durable offline queue, reload recovery, stable retry IDs, account isolation, storage failure, validation pause, duplicate prevention, interrupted-write protection.');

@@ -404,6 +404,18 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+// Compare semantic values: google.script.run may reorder object properties.
+function sameInputPayload_(stored, incoming) {
+  try {
+    var previous = JSON.parse(stored);
+    var keys = Object.keys(previous).sort();
+    var nextKeys = Object.keys(incoming).sort();
+    return JSON.stringify(keys) === JSON.stringify(nextKeys) && keys.every(function(key) {
+      return JSON.stringify(previous[key]) === JSON.stringify(incoming[key]);
+    });
+  } catch (error) { return false; }
+}
+
 function serverRequest(payload) {
   var invoke = function() {
     var output = doPost({postData:{contents:JSON.stringify(payload)}});
@@ -426,7 +438,7 @@ function serverRequest(payload) {
     var rows = receipts.getLastRow() > 1 ? receipts.getRange(2,1,receipts.getLastRow()-1,4).getValues() : [];
     for (var i=0;i<rows.length;i++) {
       if (String(rows[i][0]) !== payload.requestId) continue;
-      if (String(rows[i][1]) !== user || String(rows[i][2]) !== fingerprint) return {error:'Input request ID conflict.'};
+      if (String(rows[i][1]) !== user || !sameInputPayload_(String(rows[i][2]), payload)) return {error:'Input request ID conflict.'};
       if (!rows[i][3]) return {error:'An earlier sync was interrupted. Ask the admin to reconcile request '+payload.requestId+' in Input_Receipts before retrying'};
       return JSON.parse(String(rows[i][3]));
     }

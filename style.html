@@ -1132,4 +1132,13 @@ body {
 .chat-read-tooltip { display:none;position:absolute;bottom:100%;left:0;z-index:10;min-width:150px;max-width:250px;padding:8px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.2);overflow-wrap:anywhere; }
 .chat-read-info:hover .chat-read-tooltip,.chat-read-info:focus .chat-read-tooltip { display:block; }
 @media(max-width:560px) { .toast { bottom:145px; } }
+
+.sync-notification { position:static; max-width:none; box-shadow:none; flex:1; margin:0 1rem; }
+.app-footer { flex-wrap:wrap; gap:12px; }
+.world-clocks { margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+.world-clocks select { width:100%; margin:8px 0; }
+.world-clock { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; font-size:.85rem; font-variant-numeric:tabular-nums; }
+.world-clock button { background:transparent; color:var(--text); border:1px solid var(--border); border-radius:5px; cursor:pointer; }
+.stat-count[role=button] { cursor:pointer; border-bottom:1px dashed currentColor; }
+#extended-notes { width:100%; box-sizing:border-box; resize:vertical; padding:1rem; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:10px; font:inherit; line-height:1.6; }
 </style>

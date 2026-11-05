@@ -34,8 +34,12 @@ function instant(day,time,zone){
   return matches[0];
 }
 function shiftDay(day,days){const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
+function validSaved(item){
+  if(!item || typeof item.id!=='string' || typeof item.name!=='string' || !Number.isInteger(item.country) || !TQTimezones.countries[item.country] || !Number.isFinite(item.at) || !/^\d{4}-\d{2}-\d{2}$/.test(item.day) || !/^\d{2}:\d{2}$/.test(item.time) || (item.note!==undefined && typeof item.note!=='string'))return false;
+  try{return instant(item.day,item.time,TQTimezones.countries[item.country][1])===item.at;}catch{return false;}
+}
 function mount(root,user){
-  const key='tq_callbacks_v1:'+user.toLowerCase().trim();let items=[],editing=null,drag=null,position=null,size=null;
+  const key='tq_callbacks_v1:'+user.toLowerCase().trim();let items=[],editing=null,drag=null,position=null,size=null,signature='';
   const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
   root.replaceChildren();
   root.append(el('p','Schedule in the country’s local time. Saved on this device and browser for your username. Reminders appear while this app is open. Repeated times during a clock change use the first occurrence.'));
@@ -64,25 +68,38 @@ function mount(root,user){
   const toggleLabel=el('label'),toggle=el('input');toggle.type='checkbox';toggle.checked=true;toggleLabel.append(toggle,document.createTextNode(' Show floating callback reminder'));
   const list=el('div');root.append(form,status,toggleLabel,list);
   const floating=el('aside',undefined,'cb-float'),handle=el('button','Upcoming callback · drag to move','cb-handle'),body=el('div');handle.type='button';handle.title='Drag to move, or use arrow keys.';floating.setAttribute('aria-label','Callback reminder');floating.append(handle,body);document.body.append(floating);
-  try{const saved=JSON.parse(localStorage.getItem(key)||'{}');items=(saved.items||[]).filter(i=>typeof i.id==='string'&&typeof i.name==='string'&&TQTimezones.countries[i.country]&&Number.isFinite(i.at));toggle.checked=saved.show!==false;position=saved.position||null;size=saved.size||null;}catch{status.textContent='Could not read saved callbacks.';}
+  try{const saved=JSON.parse(localStorage.getItem(key)||'{}')||{};items=(Array.isArray(saved.items)?saved.items:[]).filter(validSaved);toggle.checked=saved.show!==false;position=saved.position||null;size=saved.size||null;}catch{status.textContent='Could not read saved callbacks.';}
+  if(!position || !Number.isFinite(position.x) || !Number.isFinite(position.y))position=null;
   function save(next=items){try{localStorage.setItem(key,JSON.stringify({items:next,show:toggle.checked,position,size}));items=next;status.textContent='Saved on this browser.';return true;}catch{status.textContent='Could not save callbacks. Browser storage may be full or unavailable.';return false;}}
   function place(x,y){const r=floating.getBoundingClientRect();position={x:Math.max(8,Math.min(x,innerWidth-r.width-8)),y:Math.max(8,Math.min(y,innerHeight-r.height-8))};floating.style.left=position.x+'px';floating.style.top=position.y+'px';}
   function reset(){form.reset();updateWeekday();editing=null;submit.textContent='Add callback';cancel.hidden=true;}
   function action(parent,title,fn){const b=el('button',title,'sync-btn');b.type='button';b.onclick=fn;parent.append(b);}
   function card(item){
-    const c=TQTimezones.countries[item.country],row=el('article',undefined,'cb-item');row.append(el('strong',item.name+' · '+c[0]));
+    const c=TQTimezones.countries[item.country],row=el('article',undefined,'cb-item');row.dataset.id=item.id;row.append(el('strong',item.name+' · '+c[0]));
     const due=item.at<=Date.now();row.append(el('p',due?'Due — call now':'Upcoming', 'cb-due'));
     const format=zone=>new Intl.DateTimeFormat(undefined,{...(zone?{timeZone:zone}:{}),dateStyle:'medium',timeStyle:'short'}).format(new Date(item.at));
     row.append(el('p',format(c[1])+' · '+c[1]),el('p','Your time: '+format()));if(item.note)row.append(el('p',item.note));
     const actions=el('div',undefined,'cb-actions');
     action(actions,'Called',()=>{if(save(items.filter(i=>i.id!==item.id))){if(editing===item.id)reset();render();}});
+    action(actions,'Remove',()=>{if(save(items.filter(i=>i.id!==item.id))){if(editing===item.id)reset();render();status.textContent='Callback removed.';}});
     for(const days of [1,7])action(actions,'Skip '+(days===1?'1 day':'1 week'),()=>{
-      try{let nextDay=shiftDay(item.day,days),at=instant(nextDay,item.time,c[1]);while(at<=Date.now()){nextDay=shiftDay(nextDay,days);at=instant(nextDay,item.time,c[1]);}if(save(items.map(i=>i.id===item.id?{...i,day:nextDay,at}:i)))render();}catch(e){status.textContent=e.message;}
+      try{let nextDay=shiftDay(item.day,days),at=instant(nextDay,item.time,c[1]);while(at<=Date.now()){nextDay=shiftDay(nextDay,days);at=instant(nextDay,item.time,c[1]);}if(save(items.map(i=>i.id===item.id?{...i,day:nextDay,at}:i))){if(editing===item.id){day.value=nextDay;updateWeekday();}render();}}catch(e){status.textContent=e.message;}
     });
     action(actions,'Reschedule / edit',()=>{editing=item.id;name.value=item.name;country.value=item.country;day.value=item.day;updateWeekday();time.value=item.time;note.value=item.note||'';submit.textContent='Save callback';cancel.hidden=false;document.querySelector('[data-app-page="input"]').click();form.scrollIntoView({behavior:'smooth',block:'center'});name.focus({preventScroll:true});});
     row.append(actions);return row;
   }
-  function render(){const sorted=items.slice().sort((a,b)=>a.at-b.at);list.replaceChildren();body.replaceChildren();if(!sorted.length)list.append(el('p','No callbacks scheduled.'));sorted.forEach(i=>list.append(card(i)));floating.hidden=!toggle.checked||!sorted.length;if(sorted.length)body.append(card(sorted[0]));if(position&&!floating.hidden)place(position.x,position.y);}
+  function render(){
+    const sorted=items.slice().sort((a,b)=>a.at-b.at),next=JSON.stringify(sorted.map(i=>[i,i.at<=Date.now()]));
+    if(signature!==next){
+      signature=next;
+      const focused=document.activeElement,row=focused&&focused.closest('.cb-item'),buttons=row&&Array.from(row.querySelectorAll('button')),focusIndex=buttons?buttons.indexOf(focused):-1,focusId=row&&row.dataset.id,inFloat=floating.contains(focused);
+      list.replaceChildren();body.replaceChildren();
+      if(!sorted.length)list.append(el('p','No callbacks scheduled.'));
+      sorted.forEach(i=>list.append(card(i)));if(sorted.length)body.append(card(sorted[0]));
+      if(focusIndex>=0){const target=Array.from((inFloat?body:list).querySelectorAll('.cb-item')).find(r=>r.dataset.id===focusId);if(target)target.querySelectorAll('button')[focusIndex]?.focus({preventScroll:true});}
+    }
+    floating.hidden=!toggle.checked||!sorted.length;if(position&&!floating.hidden)place(position.x,position.y);
+  }
   form.onsubmit=e=>{e.preventDefault();try{const countryId=Number(country.value),at=instant(day.value,time.value,TQTimezones.countries[countryId][1]);if(at<=Date.now())throw Error('Choose an upcoming date and time.');if(!name.value.trim())throw Error('Enter a person or company.');const item={id:editing||crypto.randomUUID(),name:name.value.trim(),country:countryId,day:day.value,time:time.value,note:note.value.trim(),at};const next=editing?items.map(i=>i.id===editing?item:i):[...items,item];if(save(next)){reset();render();}}catch(e){status.textContent=e.message;}};
   cancel.onclick=reset;toggle.onchange=()=>{save();render();};
   handle.onpointerdown=e=>{if(e.button!==0)return;const r=floating.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:r.left,top:r.top};handle.setPointerCapture(e.pointerId);e.preventDefault();};
@@ -102,6 +119,6 @@ function mount(root,user){
   sizeObserver.observe(floating);
   const timer=setInterval(render,30000);render();return {destroy(){clearInterval(timer);sizeObserver.disconnect();global.removeEventListener('resize',resize);floating.remove();root.replaceChildren();}};
 }
-global.TQCallbacks={mount,instant,shiftDay};
+global.TQCallbacks={mount,instant,shiftDay,validSaved};
 })(window);
 </script>

@@ -43,7 +43,7 @@ function mount(root, options={}) {
   try {
     const saved=JSON.parse(localStorage.getItem(key)||'null');
     if(Array.isArray(saved))selected=saved;
-    else if(saved){selected=saved.selected||[];floating=!!saved.floating;position=saved.position||null;size=saved.size||null;}
+    else if(saved){selected=Array.isArray(saved.selected)?saved.selected:[];floating=!!saved.floating;position=saved.position||null;size=saved.size||null;}
   } catch {}
   if(!position || !Number.isFinite(position.x) || !Number.isFinite(position.y))position=null;
   selected=selected.filter(i=>Number.isInteger(i)&&countries[i]);

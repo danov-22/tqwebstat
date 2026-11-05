@@ -10,6 +10,13 @@
 .cb-handle { display:block;width:100%;padding:12px;text-align:left;cursor:grab;touch-action:none;background:transparent;color:inherit;border:0;border-bottom:1px solid var(--border,#2a2d3a);font:inherit;font-weight:bold; }
 .cb-float .cb-item { padding:14px;border:0; }
 .cb-due { color:var(--accent,#60a5fa);font-weight:bold; }
+.cb-picker { display:flex;gap:8px;align-items:center; }
+.cb-picker input { min-width:0; }
+.cb-picker button { flex-shrink:0; }
+.cb-weekday { font-size:.85rem;color:var(--muted,#8b94a9); }
+.cb-float { resize:both;min-width:min(240px,calc(100vw - 36px));min-height:160px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden; }
+.cb-handle { flex-shrink:0; }
+.cb-float > div { overflow:auto;flex:1;min-height:0; }
 </style>
 <script>
 (function(global){
@@ -28,7 +35,7 @@ function instant(day,time,zone){
 }
 function shiftDay(day,days){const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function mount(root,user){
-  const key='tq_callbacks_v1:'+user.toLowerCase().trim();let items=[],editing=null,drag=null,position=null;
+  const key='tq_callbacks_v1:'+user.toLowerCase().trim();let items=[],editing=null,drag=null,position=null,size=null;
   const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
   root.replaceChildren();
   root.append(el('p','Schedule in the country’s local time. Saved on this device and browser for your username. Reminders appear while this app is open. Repeated times during a clock change use the first occurrence.'));
@@ -37,18 +44,30 @@ function mount(root,user){
   const name=field('Person / company','text');name.required=true;name.maxLength=150;
   const country=field('Country / city','select');
   TQTimezones.countries.map((c,id)=>({c,id})).sort((a,b)=>a.c[0].localeCompare(b.c[0])).forEach(({c,id})=>{const option=el('option',c[0]);option.value=id;country.append(option);});
-  const day=field('Day in selected country','date'),time=field('Time in selected country','time');day.required=time.required=true;
-  const note=field('Callback notes','textarea');note.maxLength=4000;
+  const day=field('Date','date');day.required=true;
+  const dateLabel=day.parentElement,datePicker=el('div',undefined,'cb-picker'),calendar=el('button','Calendar','sync-btn');calendar.type='button';datePicker.append(day,calendar);dateLabel.append(datePicker);
+  const weekday=el('span','Choose a date', 'cb-weekday');dateLabel.append(weekday);
+  function updateWeekday(){weekday.textContent=day.value?new Intl.DateTimeFormat(undefined,{weekday:'long',timeZone:'UTC'}).format(new Date(day.value+'T12:00:00Z')):'Choose a date';}
+  day.addEventListener('change',updateWeekday);
+  calendar.onclick=()=>{try{day.showPicker();}catch{day.focus();day.click();}};
+  const timeLabel=el('label','Local time (24-hour)'),timePicker=el('div',undefined,'cb-picker'),hour=el('select'),minute=el('select');
+  hour.setAttribute('aria-label','Hour');minute.setAttribute('aria-label','Minute');
+  for(let i=0;i<24;i++){const value=String(i).padStart(2,'0'),option=el('option',value);option.value=value;hour.append(option);}
+  for(let i=0;i<60;i++){const value=String(i).padStart(2,'0'),option=el('option',value);option.value=value;minute.append(option);}
+  hour.value='09';hour.querySelector('[value="09"]').defaultSelected=true;
+  timePicker.append(hour,el('span',':'),minute);timeLabel.append(timePicker);form.append(timeLabel);
+  const time={get value(){return hour.value+':'+minute.value;},set value(value){const parts=value.split(':');hour.value=parts[0];minute.value=parts[1];}};
+  const note=field('Notes (optional)','textarea');note.maxLength=4000;
   const submit=el('button','Add callback','sync-btn');submit.type='submit';form.append(submit);
   const cancel=el('button','Cancel edit','sync-btn');cancel.type='button';cancel.hidden=true;form.append(cancel);
   const status=el('p');status.setAttribute('role','status');
   const toggleLabel=el('label'),toggle=el('input');toggle.type='checkbox';toggle.checked=true;toggleLabel.append(toggle,document.createTextNode(' Show floating callback reminder'));
   const list=el('div');root.append(form,status,toggleLabel,list);
   const floating=el('aside',undefined,'cb-float'),handle=el('button','Upcoming callback · drag to move','cb-handle'),body=el('div');handle.type='button';handle.title='Drag to move, or use arrow keys.';floating.setAttribute('aria-label','Callback reminder');floating.append(handle,body);document.body.append(floating);
-  try{const saved=JSON.parse(localStorage.getItem(key)||'{}');items=(saved.items||[]).filter(i=>typeof i.id==='string'&&typeof i.name==='string'&&TQTimezones.countries[i.country]&&Number.isFinite(i.at));toggle.checked=saved.show!==false;position=saved.position||null;}catch{status.textContent='Could not read saved callbacks.';}
-  function save(next=items){try{localStorage.setItem(key,JSON.stringify({items:next,show:toggle.checked,position}));items=next;status.textContent='Saved on this browser.';return true;}catch{status.textContent='Could not save callbacks. Browser storage may be full or unavailable.';return false;}}
+  try{const saved=JSON.parse(localStorage.getItem(key)||'{}');items=(saved.items||[]).filter(i=>typeof i.id==='string'&&typeof i.name==='string'&&TQTimezones.countries[i.country]&&Number.isFinite(i.at));toggle.checked=saved.show!==false;position=saved.position||null;size=saved.size||null;}catch{status.textContent='Could not read saved callbacks.';}
+  function save(next=items){try{localStorage.setItem(key,JSON.stringify({items:next,show:toggle.checked,position,size}));items=next;status.textContent='Saved on this browser.';return true;}catch{status.textContent='Could not save callbacks. Browser storage may be full or unavailable.';return false;}}
   function place(x,y){const r=floating.getBoundingClientRect();position={x:Math.max(8,Math.min(x,innerWidth-r.width-8)),y:Math.max(8,Math.min(y,innerHeight-r.height-8))};floating.style.left=position.x+'px';floating.style.top=position.y+'px';}
-  function reset(){form.reset();editing=null;submit.textContent='Add callback';cancel.hidden=true;}
+  function reset(){form.reset();updateWeekday();editing=null;submit.textContent='Add callback';cancel.hidden=true;}
   function action(parent,title,fn){const b=el('button',title,'sync-btn');b.type='button';b.onclick=fn;parent.append(b);}
   function card(item){
     const c=TQTimezones.countries[item.country],row=el('article',undefined,'cb-item');row.append(el('strong',item.name+' · '+c[0]));
@@ -60,7 +79,7 @@ function mount(root,user){
     for(const days of [1,7])action(actions,'Skip '+(days===1?'1 day':'1 week'),()=>{
       try{let nextDay=shiftDay(item.day,days),at=instant(nextDay,item.time,c[1]);while(at<=Date.now()){nextDay=shiftDay(nextDay,days);at=instant(nextDay,item.time,c[1]);}if(save(items.map(i=>i.id===item.id?{...i,day:nextDay,at}:i)))render();}catch(e){status.textContent=e.message;}
     });
-    action(actions,'Reschedule / edit',()=>{editing=item.id;name.value=item.name;country.value=item.country;day.value=item.day;time.value=item.time;note.value=item.note||'';submit.textContent='Save callback';cancel.hidden=false;document.querySelector('[data-app-page="input"]').click();form.scrollIntoView({behavior:'smooth',block:'center'});name.focus({preventScroll:true});});
+    action(actions,'Reschedule / edit',()=>{editing=item.id;name.value=item.name;country.value=item.country;day.value=item.day;updateWeekday();time.value=item.time;note.value=item.note||'';submit.textContent='Save callback';cancel.hidden=false;document.querySelector('[data-app-page="input"]').click();form.scrollIntoView({behavior:'smooth',block:'center'});name.focus({preventScroll:true});});
     row.append(actions);return row;
   }
   function render(){const sorted=items.slice().sort((a,b)=>a.at-b.at);list.replaceChildren();body.replaceChildren();if(!sorted.length)list.append(el('p','No callbacks scheduled.'));sorted.forEach(i=>list.append(card(i)));floating.hidden=!toggle.checked||!sorted.length;if(sorted.length)body.append(card(sorted[0]));if(position&&!floating.hidden)place(position.x,position.y);}
@@ -71,7 +90,17 @@ function mount(root,user){
   const end=()=>{if(drag){drag=null;save();}};handle.onpointerup=end;handle.onpointercancel=end;handle.onlostpointercapture=end;
   handle.onkeydown=e=>{const moves={ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]},m=moves[e.key];if(m){e.preventDefault();const r=floating.getBoundingClientRect();place(r.left+m[0],r.top+m[1]);save();}};
   function resize(){if(position&&!floating.hidden)place(position.x,position.y);}global.addEventListener('resize',resize);
-  const timer=setInterval(render,30000);render();return {destroy(){clearInterval(timer);global.removeEventListener('resize',resize);floating.remove();root.replaceChildren();}};
+  floating.title='Drag the header to move; drag the bottom-right corner to resize.';
+  if(size && Number.isFinite(size.width) && Number.isFinite(size.height)){
+    floating.style.width=Math.max(240,size.width)+'px';floating.style.height=Math.max(160,size.height)+'px';
+  }
+  const sizeObserver=new ResizeObserver(()=>{
+    if(floating.hidden)return;
+    const rect=floating.getBoundingClientRect();
+    if(!size || Math.abs(size.width-rect.width)>1 || Math.abs(size.height-rect.height)>1){size={width:rect.width,height:rect.height};if(position)place(position.x,position.y);save();}
+  });
+  sizeObserver.observe(floating);
+  const timer=setInterval(render,30000);render();return {destroy(){clearInterval(timer);sizeObserver.disconnect();global.removeEventListener('resize',resize);floating.remove();root.replaceChildren();}};
 }
 global.TQCallbacks={mount,instant,shiftDay};
 })(window);

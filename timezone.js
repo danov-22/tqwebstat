@@ -57,17 +57,18 @@ function mount(root, options={}) {
     const grouped=groups(selected);
     if(!grouped.length){container.appendChild(node('p','tz-empty','Choose a country to add your first clock.'));return;}
     grouped.forEach(group=>{
-      const section=node('section','tz-group'), heading=node('h3','tz-offset',offsetLabel(group.offset)), grid=node('div','tz-cards');
-      section.append(heading,grid);container.appendChild(section);
+      const section=node('section','tz-group tz-clock'), heading=node('h3','tz-offset',offsetLabel(group.offset)), grid=node('ul','tz-countries');
+      section.dataset.zone=countries[group.ids[0]][1];
+      const time=node('time','tz-time'), date=node('p','tz-date');
+      section.append(heading,time,date,grid);container.appendChild(section);
       group.ids.forEach(id=>{
-        const [name,zone,code]=countries[id], card=node('article','tz-clock');card.dataset.zone=zone;
-        const head=node('div','tz-clock-head'), country=node('h4','tz-country');
+        const [name,zone,code]=countries[id], head=node('li','tz-clock-head'), country=node('span','tz-country');
         const flag=node('img','tz-flag');flag.src='https://flagcdn.com/w80/'+code+'.png';flag.alt=name+' flag';flag.width=40;flag.height=28;flag.loading='lazy';flag.referrerPolicy='no-referrer';
         const fallback=node('span','tz-flag-fallback',code.toUpperCase());fallback.hidden=true;
         flag.addEventListener('error',()=>{flag.hidden=true;fallback.hidden=false;});
         country.append(flag,fallback,document.createTextNode(name));head.appendChild(country);
         if(!compact){const removeButton=node('button','tz-remove','Remove');removeButton.type='button';removeButton.setAttribute('aria-label','Remove '+name);removeButton.onclick=()=>remove(id);head.appendChild(removeButton);}
-        const time=node('time','tz-time'), date=node('p','tz-date');card.append(head,time,date);grid.appendChild(card);
+        grid.appendChild(head);
       });
     });
   }

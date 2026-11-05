@@ -17,6 +17,15 @@
 .cb-float { resize:both;min-width:min(240px,calc(100vw - 36px));min-height:160px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden; }
 .cb-handle { flex-shrink:0; }
 .cb-float > div { overflow:auto;flex:1;min-height:0; }
+.cb-date-field { display:flex;flex-direction:column;gap:6px;min-width:0; }
+.cb-calendar { padding:12px;border:1px solid var(--border,#2a2d3a);border-radius:10px;background:var(--surface,#1a1d27); }
+.cb-calendar[hidden] { display:none; }
+.cb-calendar-nav { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px; }
+.cb-calendar-grid { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center; }
+.cb-calendar-grid button { min-width:0;padding:8px 0;border:1px solid transparent;border-radius:6px;background:var(--bg,#0f1117);color:var(--text,#e2e8f0);cursor:pointer;font:inherit; }
+.cb-calendar-grid button:hover,.cb-calendar-grid button:focus-visible { outline:2px solid #60a5fa;outline-offset:-2px; }
+.cb-calendar-grid button[aria-pressed="true"] { background:#2563eb;color:#fff; }
+.cb-calendar-grid abbr { font-size:.75rem;text-decoration:none;padding-bottom:6px; }
 </style>
 <script>
 (function(global){
@@ -49,11 +58,40 @@ function mount(root,user){
   const country=field('Country / city','select');
   TQTimezones.countries.map((c,id)=>({c,id})).sort((a,b)=>a.c[0].localeCompare(b.c[0])).forEach(({c,id})=>{const option=el('option',c[0]);option.value=id;country.append(option);});
   const day=field('Date','date');day.required=true;
-  const dateLabel=day.parentElement,datePicker=el('div',undefined,'cb-picker'),calendar=el('button','Calendar','sync-btn');calendar.type='button';datePicker.append(day,calendar);dateLabel.append(datePicker);
+  const dateLabel=el('div',undefined,'cb-date-field'),datePicker=el('div',undefined,'cb-picker'),calendar=el('button','Calendar','sync-btn');
+  day.parentElement.replaceWith(dateLabel);day.setAttribute('aria-label','Callback date');
+  calendar.type='button';calendar.setAttribute('aria-expanded','false');datePicker.append(day,calendar);dateLabel.append(el('span','Date'),datePicker);
   const weekday=el('span','Choose a date', 'cb-weekday');dateLabel.append(weekday);
   function updateWeekday(){weekday.textContent=day.value?new Intl.DateTimeFormat(undefined,{weekday:'long',timeZone:'UTC'}).format(new Date(day.value+'T12:00:00Z')):'Choose a date';}
   day.addEventListener('change',updateWeekday);
-  calendar.onclick=()=>{try{day.showPicker();}catch{day.focus();day.click();}};
+  const monthPicker=el('section',undefined,'cb-calendar');monthPicker.hidden=true;monthPicker.setAttribute('aria-label','Choose callback date');
+  const navigation=el('div',undefined,'cb-calendar-nav'),previous=el('button','‹','sync-btn'),monthTitle=el('strong'),next=el('button','›','sync-btn'),dates=el('div',undefined,'cb-calendar-grid'),closeCalendar=el('button','Done','sync-btn');
+  previous.type=next.type=closeCalendar.type='button';previous.setAttribute('aria-label','Previous month');next.setAttribute('aria-label','Next month');monthTitle.setAttribute('aria-live','polite');
+  navigation.append(previous,monthTitle,next);monthPicker.append(navigation,dates,closeCalendar);dateLabel.append(monthPicker);
+  let visibleMonth=new Date();
+  function closeMonthPicker(){monthPicker.hidden=true;calendar.setAttribute('aria-expanded','false');}
+  function renderMonth(){
+    const year=visibleMonth.getUTCFullYear(),month=visibleMonth.getUTCMonth();
+    monthTitle.textContent=new Intl.DateTimeFormat(undefined,{month:'long',year:'numeric',timeZone:'UTC'}).format(visibleMonth);dates.replaceChildren();
+    ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach(name=>{const heading=el('abbr',name.slice(0,2));heading.title=name;dates.append(heading);});
+    for(let i=0;i<new Date(Date.UTC(year,month,1)).getUTCDay();i++)dates.append(el('span'));
+    const count=new Date(Date.UTC(year,month+1,0)).getUTCDate();
+    for(let number=1;number<=count;number++){
+      const value=new Date(Date.UTC(year,month,number,12)).toISOString().slice(0,10),button=el('button',String(number));button.type='button';
+      button.setAttribute('aria-label',new Intl.DateTimeFormat(undefined,{dateStyle:'full',timeZone:'UTC'}).format(new Date(value+'T12:00:00Z')));button.setAttribute('aria-pressed',String(day.value===value));
+      button.onclick=()=>{day.value=value;updateWeekday();closeMonthPicker();calendar.focus();};dates.append(button);
+    }
+  }
+  calendar.onclick=()=>{
+    if(!monthPicker.hidden){closeMonthPicker();return;}
+    const current=localParts(new Date(),TQTimezones.countries[Number(country.value)][1]);
+    visibleMonth=new Date((day.value||current.year+'-'+current.month+'-'+current.day)+'T12:00:00Z');visibleMonth.setUTCDate(1);
+    renderMonth();monthPicker.hidden=false;calendar.setAttribute('aria-expanded','true');
+  };
+  previous.onclick=()=>{visibleMonth.setUTCMonth(visibleMonth.getUTCMonth()-1);renderMonth();};
+  next.onclick=()=>{visibleMonth.setUTCMonth(visibleMonth.getUTCMonth()+1);renderMonth();};
+  closeCalendar.onclick=()=>{closeMonthPicker();calendar.focus();};
+  monthPicker.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();closeMonthPicker();calendar.focus();}};
   const timeLabel=el('label','Local time (24-hour)'),timePicker=el('div',undefined,'cb-picker'),hour=el('select'),minute=el('select');
   hour.setAttribute('aria-label','Hour');minute.setAttribute('aria-label','Minute');
   for(let i=0;i<24;i++){const value=String(i).padStart(2,'0'),option=el('option',value);option.value=value;hour.append(option);}
@@ -72,7 +110,7 @@ function mount(root,user){
   if(!position || !Number.isFinite(position.x) || !Number.isFinite(position.y))position=null;
   function save(next=items){try{localStorage.setItem(key,JSON.stringify({items:next,show:toggle.checked,position,size}));items=next;status.textContent='Saved on this browser.';return true;}catch{status.textContent='Could not save callbacks. Browser storage may be full or unavailable.';return false;}}
   function place(x,y){const r=floating.getBoundingClientRect();position={x:Math.max(8,Math.min(x,innerWidth-r.width-8)),y:Math.max(8,Math.min(y,innerHeight-r.height-8))};floating.style.left=position.x+'px';floating.style.top=position.y+'px';}
-  function reset(){form.reset();updateWeekday();editing=null;submit.textContent='Add callback';cancel.hidden=true;}
+  function reset(){form.reset();updateWeekday();closeMonthPicker();editing=null;submit.textContent='Add callback';cancel.hidden=true;}
   function action(parent,title,fn){const b=el('button',title,'sync-btn');b.type='button';b.onclick=fn;parent.append(b);}
   function card(item){
     const c=TQTimezones.countries[item.country],row=el('article',undefined,'cb-item');row.dataset.id=item.id;row.append(el('strong',item.name+' · '+c[0]));

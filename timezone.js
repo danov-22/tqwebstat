@@ -39,11 +39,11 @@ function groups(ids, now=new Date()) {
 function node(tag, className, text) {const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 function mount(root, options={}) {
   const key=options.key || 'tq_public_clocks_v2';
-  let selected=[0,11,16], floating=false, position=null, drag=null, timer, signature='', floatSignature='';
+  let selected=[0,11,16], floating=false, position=null, size=null, drag=null, timer, signature='', floatSignature='';
   try {
     const saved=JSON.parse(localStorage.getItem(key)||'null');
     if(Array.isArray(saved))selected=saved;
-    else if(saved){selected=saved.selected||[];floating=!!saved.floating;position=saved.position||null;}
+    else if(saved){selected=saved.selected||[];floating=!!saved.floating;position=saved.position||null;size=saved.size||null;}
   } catch {}
   if(!position || !Number.isFinite(position.x) || !Number.isFinite(position.y))position=null;
   selected=selected.filter(i=>Number.isInteger(i)&&countries[i]);
@@ -60,6 +60,16 @@ function mount(root, options={}) {
   const floatHeader=node('div','tz-floating-header'), floatTitle=node('strong','','Timezones'), close=node('button','tz-button','Hide');close.type='button';floatHeader.append(floatTitle,close);
   floatTitle.tabIndex=0;floatTitle.setAttribute('role','button');floatTitle.setAttribute('aria-label','Move floating clocks. Drag the header or use arrow keys.');floatTitle.title='Drag to move. Arrow keys also move this panel.';
   const floatList=node('div','tz-float-list');floatPanel.append(floatHeader,floatList);
+  floatPanel.title='Drag the header to move; drag the bottom-right corner to resize.';
+  if(size && Number.isFinite(size.width) && Number.isFinite(size.height)){
+    floatPanel.style.width=Math.max(240,size.width)+'px';floatPanel.style.height=Math.max(160,size.height)+'px';
+  }
+  const sizeObserver=new ResizeObserver(()=>{
+    if(floatPanel.hidden)return;
+    const rect=floatPanel.getBoundingClientRect();
+    if(!size || Math.abs(size.width-rect.width)>1 || Math.abs(size.height-rect.height)>1){size={width:rect.width,height:rect.height};if(position)place(position.x,position.y);persist();}
+  });
+  sizeObserver.observe(floatPanel);
   let floatingToggle;
   controls.append(label,select,add);
   if(options.floating){
@@ -67,7 +77,7 @@ function mount(root, options={}) {
     floatingToggle.addEventListener('change',()=>{floating=floatingToggle.checked;persist();render();});document.body.appendChild(floatPanel);
   }
   root.append(controls,hint,status,all);
-  function persist(){try {localStorage.setItem(key,JSON.stringify({selected,floating,position}));status.textContent='';}catch{status.textContent='Could not save clock preferences on this browser.';}}
+  function persist(){try {localStorage.setItem(key,JSON.stringify({selected,floating,position,size}));status.textContent='';}catch{status.textContent='Could not save clock preferences on this browser.';}}
   function remove(id){selected=selected.filter(i=>i!==id);persist();render();}
   function build(container,compact){
     container.replaceChildren();
@@ -122,7 +132,7 @@ function mount(root, options={}) {
   add.addEventListener('click',()=>{if(select.value===''){status.textContent='Choose a country first.';return;}const id=Number(select.value);if(!selected.includes(id))selected.push(id);persist();render();});
   close.addEventListener('click',()=>{floating=false;if(floatingToggle)floatingToggle.checked=false;persist();render();});
   render();timer=setInterval(render,1000);
-  return {destroy(){clearInterval(timer);global.removeEventListener('resize',resize);floatPanel.remove();root.replaceChildren();},render};
+  return {destroy(){clearInterval(timer);sizeObserver.disconnect();global.removeEventListener('resize',resize);floatPanel.remove();root.replaceChildren();},render};
 }
 global.TQTimezones={countries,utcMinutes,offsetLabel,groups,mount};
 })(typeof window!=='undefined'?window:globalThis);

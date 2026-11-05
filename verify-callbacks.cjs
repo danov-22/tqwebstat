@@ -1,0 +1,16 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const context={Intl,Date};context.window=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync('timezone.js','utf8'),context);
+vm.runInContext(fs.readFileSync('callbacks.html','utf8').split('<script>')[1].split('</script>')[0],context);
+const {instant,shiftDay}=context.TQCallbacks;
+const iso=(day,time,zone)=>new Date(instant(day,time,zone)).toISOString();
+assert.equal(iso('2026-11-06','09:30','Asia/Makassar'),'2026-11-06T01:30:00.000Z');
+assert.equal(iso('2026-11-06','09:30','Asia/Kathmandu'),'2026-11-06T03:45:00.000Z');
+assert.equal(iso('2026-11-06','09:30','Asia/Jerusalem'),'2026-11-06T07:30:00.000Z');
+assert.equal(iso('2026-07-06','09:30','Asia/Jerusalem'),'2026-07-06T06:30:00.000Z');
+assert.throws(()=>instant('2026-03-29','01:30','Europe/London'),/does not exist/);
+assert.equal(iso('2026-10-25','01:30','Europe/London'),'2026-10-25T00:30:00.000Z');
+assert.equal(shiftDay('2026-12-31',1),'2027-01-01');
+assert.equal(shiftDay('2028-02-28',1),'2028-02-29');
+assert.equal(iso(shiftDay('2026-03-23',7),'09:00','Europe/London'),'2026-03-30T08:00:00.000Z');
+console.log('Passed: callback local-time conversion, fractional offsets, Israel DST, missing and repeated times, calendar postponement across DST, year boundaries, and leap days.');

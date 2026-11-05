@@ -340,6 +340,8 @@ function onLoginSuccess(username) {
   loadPersonalNotes();
   loadExtendedNotes();
   renderWorldClocks();
+  if (callbackController) callbackController.destroy();
+  callbackController = TQCallbacks.mount(document.getElementById('callbacks-root'), username);
   showAppPage('overview');
   initApp();
   processSaveQueue();
@@ -367,6 +369,8 @@ function doLogout() {
   if (workspaceClockController) workspaceClockController.destroy();
   workspaceClockController = null; workspaceClockUser = '';
   currentUser = null;
+  if (callbackController) callbackController.destroy();
+  callbackController = null;
   try { localStorage.removeItem('tq_user'); } catch {}
   appPage.classList.remove('visible');
   authPage.style.display = '';
@@ -386,7 +390,7 @@ const appPageButtons = document.querySelectorAll('[data-app-page]');
 const appPrimaryCards = document.querySelectorAll('.app > .card');
 const appViews = {
   overview: [appPrimaryCards[0], document.getElementById('chart-card'), document.getElementById('day-editor-card'), document.getElementById('daily-perf-card'), document.getElementById('lead-calendar-card')],
-  input: [document.getElementById('input-performance-card'), document.getElementById('stats-grid')],
+  input: [document.getElementById('input-performance-card'), document.getElementById('stats-grid'), document.getElementById('callbacks-card')],
   notes: [document.getElementById('personal-notes-card')],
   timezones: [document.getElementById('timezones-card')],
   chat: [document.getElementById('chat-card')]
@@ -2136,6 +2140,7 @@ document.getElementById('day-editor-form').addEventListener('submit',async event
   } catch(error) { if(currentUser===user) status.textContent='Could not save: '+error.message; }
   finally { button.disabled=false; }
 });
+let callbackController = null;
 let workspaceClockController = null, workspaceClockUser = '';
 function renderWorldClocks() {
   if (!currentUser || (workspaceClockController && workspaceClockUser === currentUser)) return;
